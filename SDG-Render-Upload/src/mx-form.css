@@ -1,0 +1,1 @@
+.both-note{display:flex;align-items:center;gap:10px;background:#eef7f6;color:var(--teal);border-radius:8px;padding:10px}.both-note svg{width:18px}.both-note span{display:flex;flex-direction:column}.both-note b{font-size:11px}.both-note small{font-size:9px;color:var(--muted)}
