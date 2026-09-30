@@ -1581,7 +1581,7 @@ function Maintenance({
               </div>
               <div>
                 <small>REMAINING</small>
-                <b>{m.remaining} hr</b>
+                <b>{m.remaining_label || "No due limit set"}</b>
               </div>
               <ArrowUpRight />
             </button>
@@ -3246,28 +3246,46 @@ function MaintenanceModal({
       }
       close={close}
       submit={(d) => {
-        const dueHours = Number(d.due_hours),
-          warningHours = Number(d.warning_hours),
-          warningDays = Number(d.warning_days),
-          hoursLeft = dueHours - Number(aircraft.time),
-          daysLeft = Math.ceil(
-            (new Date(String(d.due_date) + "T23:59:59").getTime() -
-              Date.now()) /
-              86400000,
+        const optionalNumber = (input: unknown) =>
+            input === "" || input == null ? null : Number(input),
+          dueHours = optionalNumber(d.due_hours),
+          warningHours = optionalNumber(d.warning_hours),
+          warningDays = optionalNumber(d.warning_days),
+          intervalHours = optionalNumber(d.interval_hours),
+          intervalDays = optionalNumber(d.interval_days),
+          dueDate = String(d.due_date || ""),
+          hoursLeft = dueHours == null ? null : dueHours - Number(aircraft.hobbs ?? aircraft.time),
+          daysLeft = !dueDate ? null : Math.ceil(
+            (new Date(`${dueDate}T23:59:59`).getTime() - Date.now()) / 86400000,
           ),
-          overdue = hoursLeft <= 0 || daysLeft <= 0,
-          soon = hoursLeft <= warningHours || daysLeft <= warningDays;
+          overdue = (hoursLeft != null && hoursLeft <= 0) || (daysLeft != null && daysLeft <= 0),
+          soon = (hoursLeft != null && warningHours != null && hoursLeft <= warningHours) ||
+            (daysLeft != null && warningDays != null && daysLeft <= warningDays),
+          dueParts = [
+            dueHours == null ? null : `${dueHours.toFixed(1)} Hobbs`,
+            dueDate || null,
+          ].filter(Boolean),
+          remainingParts = [
+            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr`,
+            daysLeft == null ? null : `${daysLeft} days`,
+          ].filter(Boolean),
+          remainingValues = [hoursLeft, daysLeft].filter((x): x is number => x != null),
+          warningValues = [warningHours, warningDays].filter((x): x is number => x != null);
         save({
           ...d,
           aircraft_id: aircraft.id,
-          due_kind: "both",
-          due: `${dueHours.toFixed(1)} hr or ${d.due_date}`,
-          remaining: Math.min(hoursLeft, daysLeft),
-          warning: Math.min(warningHours, warningDays),
-          remaining_label: `${hoursLeft.toFixed(1)} hr / ${daysLeft} days`,
-          interval_hours: Number(d.interval_hours) || null,
-          interval_days: Number(d.interval_days) || null,
-          status: overdue ? "Overdue" : soon ? "Due soon" : "OK",
+          due_hours: dueHours,
+          due_date: dueDate || null,
+          warning_hours: warningHours,
+          warning_days: warningDays,
+          due_kind: dueHours != null && dueDate ? "both" : dueHours != null ? "hours" : dueDate ? "date" : "none",
+          due: dueParts.join(" or ") || "No due limit set",
+          remaining: remainingValues.length ? Math.min(...remainingValues) : 0,
+          warning: warningValues.length ? Math.min(...warningValues) : 0,
+          remaining_label: remainingParts.join(" / ") || "No due limit set",
+          interval_hours: intervalHours,
+          interval_days: intervalDays,
+          status: overdue ? "Overdue" : soon ? "Due soon" : dueParts.length ? "OK" : "Tracking",
         });
       }}
     >
@@ -3282,7 +3300,6 @@ function MaintenanceModal({
       <Field label="DUE AT AIRCRAFT TIME">
         <input
           name="due_hours"
-          required
           type="number"
           min="0"
           step=".1"
@@ -3293,7 +3310,6 @@ function MaintenanceModal({
       <Field label="DUE DATE">
         <input
           name="due_date"
-          required
           type="date"
           defaultValue={value?.due_date || ""}
         />
@@ -3301,21 +3317,21 @@ function MaintenanceModal({
       <Field label="WARNING — HOURS BEFORE">
         <input
           name="warning_hours"
-          required
           type="number"
           min="0"
           step=".1"
-          defaultValue={value?.warning_hours ?? 20}
+          defaultValue={value?.warning_hours ?? ""}
+          placeholder="Optional"
         />
       </Field>
       <Field label="WARNING — DAYS BEFORE">
         <input
           name="warning_days"
-          required
           type="number"
           min="0"
           step="1"
-          defaultValue={value?.warning_days ?? 30}
+          defaultValue={value?.warning_days ?? ""}
+          placeholder="Optional"
         />
       </Field>
       <Field label="REPEAT EVERY — HOURS">
@@ -3341,10 +3357,9 @@ function MaintenanceModal({
       <div className="both-note">
         <Clock3 />
         <span>
-          <b>Recurring inspection interval</b>
+          <b>Use only the fields you need</b>
           <small>
-            Maintenance can use hours, days, or both. The next due limits are
-            calculated from the completed inspection.
+            Blank hours, dates, warnings, and repeat intervals are ignored.
           </small>
         </span>
       </div>
