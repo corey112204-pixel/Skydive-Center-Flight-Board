@@ -697,6 +697,15 @@ export function App() {
                 : "Maintenance item added",
             )
           }
+          remove={
+            editing?.id
+              ? () =>
+                  submit(
+                    () => api.archive("maintenance", editing.id),
+                    "Maintenance item deleted",
+                  )
+              : undefined
+          }
         />
       )}{" "}
       {toast && (
@@ -2680,11 +2689,13 @@ function SimpleForm({
   close,
   submit,
   children,
+  destructiveAction,
 }: {
   title: string;
   close: () => void;
   submit: (d: any) => void;
   children: React.ReactNode;
+  destructiveAction?: React.ReactNode;
 }) {
   return (
     <ModalShell
@@ -2700,6 +2711,7 @@ function SimpleForm({
       >
         <div className="form-grid">{children}</div>
         <div className="modal-actions">
+          {destructiveAction}
           <button type="button" className="ghost" onClick={close}>
             Cancel
           </button>
@@ -3231,12 +3243,15 @@ function MaintenanceModal({
   aircraft,
   close,
   save,
+  remove,
 }: {
   value: any;
   aircraft: any;
   close: () => void;
   save: (d: any) => void;
+  remove?: () => void;
 }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   return (
     <SimpleForm
       title={
@@ -3245,6 +3260,17 @@ function MaintenanceModal({
           : `Add maintenance · ${aircraft?.tail}`
       }
       close={close}
+      destructiveAction={remove && (
+        confirmingDelete ? (
+          <>
+            <span className="delete-confirm">Delete this maintenance item?</span>
+            <button type="button" className="danger-action" onClick={remove}>Yes, delete</button>
+            <button type="button" className="ghost" onClick={() => setConfirmingDelete(false)}>Keep item</button>
+          </>
+        ) : (
+          <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Delete maintenance item</button>
+        )
+      )}
       submit={(d) => {
         const optionalNumber = (input: unknown) =>
             input === "" || input == null ? null : Number(input),
