@@ -1,0 +1,84 @@
+.record-table .daily-empty {
+  grid-template-columns: 1fr;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 34px;
+  color: var(--muted);
+}
+.daily-date-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.daily-date-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.daily-date-picker label span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #637578;
+}
+.daily-date-picker input {
+  height: 39px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 11px;
+  color: #344548;
+}
+.daily-date-picker .ghost {
+  height: 39px;
+}
+.daily-empty svg {
+  width: 24px;
+  color: var(--teal);
+}
+.daily-empty span {
+  display: flex !important;
+  flex-direction: column;
+}
+.daily-empty b {
+  color: #344548;
+  font-size: 12px;
+}
+.daily-empty small {
+  font-size: 10px;
+}
+.record-table .record-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1.3fr repeat(4, 0.7fr);
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #edf0ef;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  font-size: 11px;
+  padding: 12px 17px;
+  cursor: pointer;
+}
+.record-table .record-row:hover {
+  background: #f4faf9;
+}
+.record-table .record-row:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+@media (max-width: 760px) {
+  .record-table .record-row {
+    grid-template-columns: 1.3fr 1fr 1fr;
+  }
+
+  .record-table .record-row > *:nth-child(2),
+  .record-table .record-row > *:nth-child(5),
+  .record-table .record-row > *:nth-child(6) {
+    display: none;
+  }
+}
