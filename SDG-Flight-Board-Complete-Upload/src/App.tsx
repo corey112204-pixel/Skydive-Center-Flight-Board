@@ -461,7 +461,15 @@ export function App() {
           ) : page === "reports" ? (
             <Reports state={state} />
           ) : page === "documents" ? (
-            <Documents items={state.documents || []} />
+            <Documents
+              items={state.documents || []}
+              remove={(id) =>
+                submit(
+                  () => api.archive("documents", id),
+                  "Document deleted",
+                )
+              }
+            />
           ) : page === "admin" ? (
             <Admin
               users={(state.users || []) as any[]}
@@ -2010,8 +2018,14 @@ function Reports({ state }: { state: State }) {
     </>
   );
 }
-function Documents({ items }: { items: any[] }) {
+function Documents({ items, remove }: { items: any[]; remove: (id: string) => void }) {
   const loadSheets = items.filter((x) => x.folder === "Load Sheets");
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const closeViewer = () => {
+    setSelectedDocument(null);
+    setConfirmingDelete(false);
+  };
   return (
     <>
       <PageHead
@@ -2021,12 +2035,13 @@ function Documents({ items }: { items: any[] }) {
       <Section title={`Load Sheets (${loadSheets.length})`}>
         <div className="document-grid">
           {loadSheets.map((doc) => (
-            <a
+            <button
               key={doc.id}
               className="document-card"
-              href={doc.image_data}
-              target="_blank"
-              rel="noreferrer"
+              onClick={() => {
+                setSelectedDocument(doc);
+                setConfirmingDelete(false);
+              }}
             >
               <img src={doc.image_data} alt={doc.file_name} />
               <span>
@@ -2034,7 +2049,7 @@ function Documents({ items }: { items: any[] }) {
                 <small>{doc.file_name}</small>
               </span>
               <ArrowUpRight />
-            </a>
+            </button>
           ))}
           {!loadSheets.length && (
             <div className="empty-mini">
@@ -2044,6 +2059,39 @@ function Documents({ items }: { items: any[] }) {
           )}
         </div>
       </Section>
+      {selectedDocument && (
+        <ModalShell
+          title={`Load sheet · ${selectedDocument.week_ending || selectedDocument.file_name}`}
+          desc={selectedDocument.file_name}
+          close={closeViewer}
+        >
+          <div className="document-viewer">
+            <img src={selectedDocument.image_data} alt={selectedDocument.file_name} />
+          </div>
+          <div className="modal-actions">
+            {confirmingDelete ? (
+              <>
+                <span className="delete-confirm">Delete this document?</span>
+                <button
+                  type="button"
+                  className="danger-action"
+                  onClick={() => {
+                    const id = selectedDocument.id;
+                    closeViewer();
+                    remove(id);
+                  }}
+                >
+                  Yes, delete
+                </button>
+                <button type="button" className="ghost" onClick={() => setConfirmingDelete(false)}>Keep document</button>
+              </>
+            ) : (
+              <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Delete document</button>
+            )}
+            <button type="button" className="primary" onClick={closeViewer}>Close</button>
+          </div>
+        </ModalShell>
+      )}
     </>
   );
 }
