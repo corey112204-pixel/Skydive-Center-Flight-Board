@@ -65,9 +65,15 @@ for (const [table, column, type] of [
   ["maintenance", "due_date", "text"],
   ["maintenance", "warning_hours", "real"],
   ["maintenance", "warning_days", "integer"],
+  ["maintenance", "due_cycles", "integer"],
+  ["maintenance", "warning_cycles", "integer"],
+  ["maintenance", "warning2_hours", "real"],
+  ["maintenance", "warning2_days", "integer"],
+  ["maintenance", "warning2_cycles", "integer"],
   ["maintenance", "remaining_label", "text"],
   ["maintenance", "interval_hours", "real"],
   ["maintenance", "interval_days", "integer"],
+  ["maintenance", "interval_cycles", "integer"],
 ])
   if (
     !db

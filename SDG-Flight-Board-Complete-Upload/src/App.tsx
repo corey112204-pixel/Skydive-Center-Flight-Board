@@ -1423,6 +1423,7 @@ function Maintenance({
   remove: (id: string) => void;
 }) {
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const [inspectionTemplateId, setInspectionTemplateId] = useState("");
   if (!ac)
     return (
       <>
@@ -1441,6 +1442,25 @@ function Maintenance({
       </>
     );
   const own = items.filter((x) => x.aircraft_id === ac.id);
+  const inspectionTemplates = Array.from(
+    new Map(items.map((item) => [String(item.item).toLowerCase(), item])).values(),
+  );
+  const addFromTemplate = () => {
+    const template: any = inspectionTemplates.find((item: any) => item.id === inspectionTemplateId);
+    if (!template) return;
+    action({
+      item: template.item,
+      warning_hours: template.warning_hours,
+      warning_days: template.warning_days,
+      warning_cycles: template.warning_cycles,
+      warning2_hours: template.warning2_hours,
+      warning2_days: template.warning2_days,
+      warning2_cycles: template.warning2_cycles,
+      interval_hours: template.interval_hours,
+      interval_days: template.interval_days,
+      interval_cycles: template.interval_cycles,
+    });
+  };
   return (
     <>
       <button className="back-link" onClick={back}>
@@ -1504,6 +1524,15 @@ function Maintenance({
             <Plus />
             Add maintenance item
           </button>
+          {inspectionTemplates.length > 0 && <div className="inspection-picker">
+            <select value={inspectionTemplateId} onChange={(e) => setInspectionTemplateId(e.target.value)}>
+              <option value="">Select existing inspection…</option>
+              {inspectionTemplates.map((template: any) => (
+                <option key={template.id} value={template.id}>{template.item}</option>
+              ))}
+            </select>
+            <button type="button" className="ghost" disabled={!inspectionTemplateId} onClick={addFromTemplate}>Add to {ac.tail}</button>
+          </div>}
         </div>
       </div>
       <Section title="Aircraft information">
@@ -3252,6 +3281,9 @@ function MaintenanceModal({
   remove?: () => void;
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showSecondWarning, setShowSecondWarning] = useState(
+    value?.warning2_hours != null || value?.warning2_days != null || value?.warning2_cycles != null,
+  );
   return (
     <SimpleForm
       title={
@@ -3275,42 +3307,64 @@ function MaintenanceModal({
         const optionalNumber = (input: unknown) =>
             input === "" || input == null ? null : Number(input),
           dueHours = optionalNumber(d.due_hours),
+          dueCycles = optionalNumber(d.due_cycles),
           warningHours = optionalNumber(d.warning_hours),
           warningDays = optionalNumber(d.warning_days),
+          warningCycles = optionalNumber(d.warning_cycles),
+          warning2Hours = showSecondWarning ? optionalNumber(d.warning2_hours) : null,
+          warning2Days = showSecondWarning ? optionalNumber(d.warning2_days) : null,
+          warning2Cycles = showSecondWarning ? optionalNumber(d.warning2_cycles) : null,
           intervalHours = optionalNumber(d.interval_hours),
           intervalDays = optionalNumber(d.interval_days),
+          intervalCycles = optionalNumber(d.interval_cycles),
           dueDate = String(d.due_date || ""),
           hoursLeft = dueHours == null ? null : dueHours - Number(aircraft.hobbs ?? aircraft.time),
+          cyclesLeft = dueCycles == null ? null : dueCycles - Number(aircraft.tcsn ?? aircraft.cycles),
           daysLeft = !dueDate ? null : Math.ceil(
             (new Date(`${dueDate}T23:59:59`).getTime() - Date.now()) / 86400000,
           ),
-          overdue = (hoursLeft != null && hoursLeft <= 0) || (daysLeft != null && daysLeft <= 0),
+          overdue = (hoursLeft != null && hoursLeft <= 0) ||
+            (daysLeft != null && daysLeft <= 0) ||
+            (cyclesLeft != null && cyclesLeft <= 0),
           soon = (hoursLeft != null && warningHours != null && hoursLeft <= warningHours) ||
-            (daysLeft != null && warningDays != null && daysLeft <= warningDays),
+            (daysLeft != null && warningDays != null && daysLeft <= warningDays) ||
+            (cyclesLeft != null && warningCycles != null && cyclesLeft <= warningCycles) ||
+            (hoursLeft != null && warning2Hours != null && hoursLeft <= warning2Hours) ||
+            (daysLeft != null && warning2Days != null && daysLeft <= warning2Days) ||
+            (cyclesLeft != null && warning2Cycles != null && cyclesLeft <= warning2Cycles),
           dueParts = [
             dueHours == null ? null : `${dueHours.toFixed(1)} Hobbs`,
             dueDate || null,
+            dueCycles == null ? null : `${dueCycles} cycles`,
           ].filter(Boolean),
           remainingParts = [
             hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr`,
             daysLeft == null ? null : `${daysLeft} days`,
+            cyclesLeft == null ? null : `${cyclesLeft} cycles`,
           ].filter(Boolean),
-          remainingValues = [hoursLeft, daysLeft].filter((x): x is number => x != null),
-          warningValues = [warningHours, warningDays].filter((x): x is number => x != null);
+          remainingValues = [hoursLeft, daysLeft, cyclesLeft].filter((x): x is number => x != null),
+          warningValues = [warningHours, warningDays, warningCycles, warning2Hours, warning2Days, warning2Cycles].filter((x): x is number => x != null),
+          dueKinds = [dueHours != null ? "hours" : null, dueDate ? "date" : null, dueCycles != null ? "cycles" : null].filter(Boolean);
         save({
           ...d,
           aircraft_id: aircraft.id,
           due_hours: dueHours,
           due_date: dueDate || null,
+          due_cycles: dueCycles,
           warning_hours: warningHours,
           warning_days: warningDays,
-          due_kind: dueHours != null && dueDate ? "both" : dueHours != null ? "hours" : dueDate ? "date" : "none",
+          warning_cycles: warningCycles,
+          warning2_hours: warning2Hours,
+          warning2_days: warning2Days,
+          warning2_cycles: warning2Cycles,
+          due_kind: dueKinds.join("+") || "none",
           due: dueParts.join(" or ") || "No due limit set",
           remaining: remainingValues.length ? Math.min(...remainingValues) : 0,
           warning: warningValues.length ? Math.min(...warningValues) : 0,
           remaining_label: remainingParts.join(" / ") || "No due limit set",
           interval_hours: intervalHours,
           interval_days: intervalDays,
+          interval_cycles: intervalCycles,
           status: overdue ? "Overdue" : soon ? "Due soon" : dueParts.length ? "OK" : "Tracking",
         });
       }}
@@ -3340,6 +3394,16 @@ function MaintenanceModal({
           defaultValue={value?.due_date || ""}
         />
       </Field>
+      <Field label="DUE AT AIRCRAFT CYCLES">
+        <input
+          name="due_cycles"
+          type="number"
+          min="0"
+          step="1"
+          defaultValue={value?.due_cycles ?? ""}
+          placeholder="Optional TCSN limit"
+        />
+      </Field>
       <Field label="WARNING — HOURS BEFORE">
         <input
           name="warning_hours"
@@ -3360,6 +3424,26 @@ function MaintenanceModal({
           placeholder="Optional"
         />
       </Field>
+      <Field label="WARNING — CYCLES BEFORE">
+        <input
+          name="warning_cycles"
+          type="number"
+          min="0"
+          step="1"
+          defaultValue={value?.warning_cycles ?? ""}
+          placeholder="Optional"
+        />
+      </Field>
+      <div className="wide warning-toggle">
+        <button type="button" className="ghost" onClick={() => setShowSecondWarning((shown) => !shown)}>
+          {showSecondWarning ? "Remove second warning" : "+ Add a second warning"}
+        </button>
+      </div>
+      {showSecondWarning && <>
+        <Field label="SECOND WARNING — HOURS BEFORE"><input name="warning2_hours" type="number" min="0" step=".1" defaultValue={value?.warning2_hours ?? ""} placeholder="Optional" /></Field>
+        <Field label="SECOND WARNING — DAYS BEFORE"><input name="warning2_days" type="number" min="0" step="1" defaultValue={value?.warning2_days ?? ""} placeholder="Optional" /></Field>
+        <Field label="SECOND WARNING — CYCLES BEFORE"><input name="warning2_cycles" type="number" min="0" step="1" defaultValue={value?.warning2_cycles ?? ""} placeholder="Optional" /></Field>
+      </>}
       <Field label="REPEAT EVERY — HOURS">
         <input
           name="interval_hours"
@@ -3380,12 +3464,22 @@ function MaintenanceModal({
           placeholder="Example: 365"
         />
       </Field>
+      <Field label="REPEAT EVERY — CYCLES">
+        <input
+          name="interval_cycles"
+          type="number"
+          min="0"
+          step="1"
+          defaultValue={value?.interval_cycles ?? ""}
+          placeholder="Example: 500"
+        />
+      </Field>
       <div className="both-note">
         <Clock3 />
         <span>
           <b>Use only the fields you need</b>
           <small>
-            Blank hours, dates, warnings, and repeat intervals are ignored.
+            Blank hours, dates, cycles, warnings, and repeat intervals are ignored.
           </small>
         </span>
       </div>
