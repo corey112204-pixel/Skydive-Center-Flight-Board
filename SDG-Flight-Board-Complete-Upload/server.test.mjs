@@ -362,3 +362,34 @@ test("Twin Otter flight advances both engine time and cycle counters", async () 
   assert.equal(updated.engine2_ttsn, 5101.2);
   assert.equal(updated.engine2_tcsn, 4604);
 });
+test("deleting a daily record archives it and reverses aircraft totals", async () => {
+  const before = db.prepare("select * from aircraft where id='a2'").get();
+  const created = await call(
+    "/flight_records",
+    "POST",
+    {
+      aircraft_id: "a2",
+      pilot_id: "p1",
+      dz: "Georgia",
+      flight_date: "2030-04-14",
+      start_time: before.hobbs,
+      end_time: before.hobbs + 0.7,
+      start_cycles: before.tcsn,
+      end_cycles: before.tcsn + 3,
+      loads: 3,
+    },
+    "pilot",
+  );
+  assert.equal(created.status, 201);
+  const removed = await call(`/flight_records/${created.data.id}`, "DELETE", undefined, "pilot");
+  assert.equal(removed.status, 200);
+  const after = db.prepare("select * from aircraft where id='a2'").get();
+  assert.equal(after.ttsn, before.ttsn);
+  assert.equal(after.tcsn, before.tcsn);
+  assert.equal(after.hobbs, before.hobbs);
+  assert(
+    db.prepare("select archived_at from flight_records where id=?").get(created.data.id).archived_at,
+  );
+  const state = await call("/state");
+  assert(!state.data.flight_records.some((record) => record.id === created.data.id));
+});

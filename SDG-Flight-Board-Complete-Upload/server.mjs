@@ -74,6 +74,7 @@ for (const [table, column, type] of [
   ["maintenance", "interval_hours", "real"],
   ["maintenance", "interval_days", "integer"],
   ["maintenance", "interval_cycles", "integer"],
+  ["flight_records", "archived_at", "text"],
 ])
   if (
     !db
@@ -504,7 +505,7 @@ export function handler(req, res) {
       for (const t of tables)
         state[t] = db
           .prepare(
-            `select * from ${t} where ${["notifications", "audit_logs", "flight_records"].includes(t) ? "1=1" : "archived_at is null"}`,
+            `select * from ${t} where ${["notifications", "audit_logs"].includes(t) ? "1=1" : "archived_at is null"}`,
           )
           .all();
       state.pilots = state.pilots.map((p) => ({
@@ -661,7 +662,10 @@ export function handler(req, res) {
       db.exec("begin immediate");
       try {
         db.prepare(
-          "insert into flight_records values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          `insert into flight_records(
+            id,aircraft_id,pilot_id,dz,flight_date,start_time,end_time,total_time,
+            start_cycles,end_cycles,total_cycles,loads,fuel,oil,notes,created_at
+          ) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ).run(
           id,
           d.aircraft_id,
@@ -766,6 +770,7 @@ export function handler(req, res) {
       const endCycles = Number(d.end_cycles ?? old.end_cycles ?? startCycles);
       const loads = Number(d.loads ?? old.loads);
       const flightDate = String(d.flight_date ?? old.flight_date);
+      const dropZone = String(d.dz ?? old.dz ?? aircraft.dz);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(flightDate))
         throw Error("A valid operating date is required");
       if (!Number.isFinite(endTime) || endTime < startTime)
@@ -779,7 +784,7 @@ export function handler(req, res) {
       const updated = {
         ...old,
         aircraft_id: aircraftId,
-        dz: aircraft.dz,
+        dz: dropZone,
         flight_date: flightDate,
         start_time: startTime,
         end_time: endTime,
@@ -796,7 +801,7 @@ export function handler(req, res) {
           "update flight_records set aircraft_id=?,dz=?,flight_date=?,start_time=?,end_time=?,total_time=?,start_cycles=?,end_cycles=?,total_cycles=?,loads=?,notes=? where id=?",
         ).run(
           aircraftId,
-          aircraft.dz,
+          dropZone,
           flightDate,
           startTime,
           endTime,
@@ -872,6 +877,38 @@ export function handler(req, res) {
         throw e;
       }
       return json(res, 200, updated);
+    }
+    if (req.method === "DELETE" && resource === "flight_records" && parts[2]) {
+      const old = db
+        .prepare("select * from flight_records where id=? and archived_at is null")
+        .get(parts[2]);
+      if (!old) return json(res, 404, { error: "Flight record not found" });
+      if (role === "pilot" && old.pilot_id !== currentUser.pilot_id)
+        return json(res, 403, { error: "Pilots may only delete their own records" });
+      const aircraft = db
+        .prepare("select * from aircraft where id=?")
+        .get(old.aircraft_id);
+      db.exec("begin immediate");
+      try {
+        const timeDelta = -Number(old.total_time || 0),
+          cycleDelta = -Number(old.total_cycles || 0),
+          currentHobbs = Number(aircraft?.hobbs ?? aircraft?.time ?? 0),
+          recordEnd = Number(old.end_time || 0);
+        if (Math.abs(currentHobbs - recordEnd) < 0.001)
+          updateAircraftTotals(old.aircraft_id, timeDelta, cycleDelta);
+        else
+          updateAircraftCumulativeTotals(old.aircraft_id, timeDelta, cycleDelta);
+        db.prepare("update flight_records set archived_at=? where id=?").run(now(), old.id);
+        audit("archive", "flight_record", old.id, old, null, role);
+        notify("Daily record deleted", `${aircraft?.tail || "Aircraft"}: ${old.flight_date}`, {
+          pilotIds: [old.pilot_id],
+        });
+        db.exec("commit");
+      } catch (e) {
+        db.exec("rollback");
+        throw e;
+      }
+      return json(res, 200, { ok: true });
     }
     if (req.method === "POST") {
       const d = await body(req);
@@ -979,6 +1016,27 @@ function updateAircraftTotals(id, timeDelta, cycleDelta) {
       where id=?`,
   ).run(
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
+    timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
+    timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta, id,
+  );
+}
+function updateAircraftCumulativeTotals(id, timeDelta, cycleDelta) {
+  db.prepare(
+    `update aircraft set
+      cycles=cycles+?,ttsn=coalesce(ttsn,time)+?,tcsn=coalesce(tcsn,cycles)+?,
+      engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
+      engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
+      engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
+      engine1_ttsn=case when engine1_ttsn is null then null else engine1_ttsn+? end,
+      engine1_tcsn=case when engine1_tcsn is null then null else engine1_tcsn+? end,
+      engine2_tsmoh=case when engine2_tsmoh is null then null else engine2_tsmoh+? end,
+      engine2_tshsi=case when engine2_tshsi is null then null else engine2_tshsi+? end,
+      engine2_tcsoh=case when engine2_tcsoh is null then null else engine2_tcsoh+? end,
+      engine2_ttsn=case when engine2_ttsn is null then null else engine2_ttsn+? end,
+      engine2_tcsn=case when engine2_tcsn is null then null else engine2_tcsn+? end
+      where id=?`,
+  ).run(
+    cycleDelta, timeDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta, id,
   );

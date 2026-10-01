@@ -544,6 +544,15 @@ export function App() {
             setEditing(null);
           }}
           aircraft={state.aircraft || []}
+          remove={
+            editing?.id
+              ? () =>
+                  submit(
+                    () => api.archive("flight_records", editing.id),
+                    "Daily operation entry deleted",
+                  )
+              : undefined
+          }
           submit={(d) =>
             submit(
               () =>
@@ -2422,17 +2431,21 @@ function DayModal({
   close,
   submit,
   aircraft: acs,
+  remove,
 }: {
   value?: any;
   close: () => void;
   submit: (d: any) => void;
   aircraft: any[];
+  remove?: () => void;
 }) {
   const [aircraftId, setAircraftId] = useState(value?.aircraft_id || ""),
+    [dropZone, setDropZone] = useState(value?.dz || ""),
     [end, setEnd] = useState(String(value?.end_time ?? "")),
     [startTime, setStartTime] = useState(Number(value?.start_time ?? 0)),
     [startCycles, setStartCycles] = useState(Number(value?.start_cycles ?? 0)),
-    [squawk, setSquawk] = useState(false);
+    [squawk, setSquawk] = useState(false),
+    [confirmingDelete, setConfirmingDelete] = useState(false);
   const ac = acs.find((a) => a.id === aircraftId),
     start = startTime,
     total = end ? Math.max(0, Number(end) - start).toFixed(1) : "0.0",
@@ -2457,7 +2470,7 @@ function DayModal({
             ...f,
             aircraft_id: aircraftId,
             pilot_id: "p1",
-            dz: ac?.dz || "",
+            dz: dropZone,
             flight_date: String(f.flight_date),
             start_time: start,
             start_cycles: startCycles,
@@ -2483,6 +2496,7 @@ function DayModal({
               onChange={(e) => {
                 setAircraftId(e.target.value);
                 const next = acs.find((a) => a.id === e.target.value);
+                setDropZone(next?.dz || "");
                 setEnd(String(next?.hobbs ?? next?.time ?? ""));
                 setStartTime(Number(next?.hobbs ?? next?.time ?? 0));
                 setStartCycles(Number(next?.tcsn ?? next?.cycles ?? 0));
@@ -2496,6 +2510,14 @@ function DayModal({
                   {a.tail} · {a.type} · {a.dz}
                 </option>
               ))}
+            </select>
+          </Field>
+          <Field label="DROP ZONE" wide>
+            <select required value={dropZone} onChange={(e) => setDropZone(e.target.value)}>
+              <option value="" disabled>Select a drop zone</option>
+              <option>Georgia</option>
+              <option>Alabama</option>
+              <option>Tennessee</option>
             </select>
           </Field>
           <div className="current-values">
@@ -2598,6 +2620,15 @@ function DayModal({
           </div>
         </div>
         <div className="modal-actions">
+          {remove && (confirmingDelete ? (
+            <>
+              <span className="delete-confirm">Delete this daily operation entry?</span>
+              <button type="button" className="danger-action" onClick={remove}>Yes, delete</button>
+              <button type="button" className="ghost" onClick={() => setConfirmingDelete(false)}>Keep entry</button>
+            </>
+          ) : (
+            <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Delete entry</button>
+          ))}
           <button type="button" className="ghost" onClick={close}>
             Cancel
           </button>
