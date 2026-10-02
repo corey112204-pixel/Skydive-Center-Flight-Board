@@ -198,6 +198,37 @@ test("maintenance due time can be calculated from Hobbs", async () => {
   assert.equal(item.remaining_label, "0.5 hr Hobbs");
   assert.equal(item.status, "Due soon");
 });
+test("PAC engine maintenance can use engine hour and cycle counters", async () => {
+  db.prepare(
+    `update aircraft set engine_ttsn=5000,engine_tcsn=4200,
+     engine_ttsoh=400,engine_tcsoh=300 where id='a1'`,
+  ).run();
+  const created = await call(
+    "/maintenance",
+    "POST",
+    {
+      aircraft_id: "a1",
+      item: "Engine hot section inspection",
+      component: "engine",
+      due: "410.0 Engine TTSOH or 305 Engine TCSOH",
+      remaining: 5,
+      warning: 6,
+      status: "OK",
+      due_time_basis: "engine_ttsoh",
+      due_hours: 410,
+      due_cycle_basis: "engine_tcsoh",
+      due_cycles: 305,
+      warning_cycles: 6,
+    },
+    "maintenance",
+  );
+  assert.equal(created.status, 201);
+  const state = await call("/state", "GET", undefined, "maintenance");
+  const item = state.data.maintenance.find((entry) => entry.id === created.data.id);
+  assert.equal(item.component, "engine");
+  assert.equal(item.remaining_label, "10.0 hr Engine TTSOH / 5 cycles Engine TCSOH");
+  assert.equal(item.status, "Due soon");
+});
 test("maintenance can reserve an aircraft but cannot schedule pilots", async () => {
   const date = "2030-04-12";
   const mx = await call(
@@ -352,6 +383,10 @@ test("daily transaction updates aircraft", async () => {
   assert.equal(afterCreate.hobbs, before + 0.5);
   assert.equal(afterCreate.ttsn, startingAircraft.ttsn + 0.5);
   assert.equal(afterCreate.tcsn, startingAircraft.tcsn + 2);
+  assert.equal(afterCreate.engine_ttsn, startingAircraft.engine_ttsn + 0.5);
+  assert.equal(afterCreate.engine_ttsoh, startingAircraft.engine_ttsoh + 0.5);
+  assert.equal(afterCreate.engine_tcsn, startingAircraft.engine_tcsn + 2);
+  assert.equal(afterCreate.engine_tcsoh, startingAircraft.engine_tcsoh + 2);
   const beforeEdit = db.prepare("select * from aircraft where id='a1'").get();
   const editSquawk = `Edit squawk ${Date.now()}`;
   const edited = await call(

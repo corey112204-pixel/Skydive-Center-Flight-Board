@@ -45,6 +45,10 @@ for (const [table, column, type] of [
   ["aircraft", "hobbs", "real"],
   ["aircraft", "ttsn", "real"],
   ["aircraft", "tcsn", "integer"],
+  ["aircraft", "engine_ttsn", "real"],
+  ["aircraft", "engine_tcsn", "integer"],
+  ["aircraft", "engine_ttsoh", "real"],
+  ["aircraft", "engine_tcsoh", "integer"],
   ["aircraft", "engine1_tsmoh", "real"],
   ["aircraft", "engine1_tshsi", "real"],
   ["aircraft", "engine1_tcsoh", "integer"],
@@ -61,7 +65,9 @@ for (const [table, column, type] of [
   ["pilots", "certificate_type", "text"],
   ["pilots", "notes", "text"],
   ["maintenance", "due_kind", "text"],
+  ["maintenance", "component", "text"],
   ["maintenance", "due_time_basis", "text"],
+  ["maintenance", "due_cycle_basis", "text"],
   ["maintenance", "due_hours", "real"],
   ["maintenance", "due_date", "text"],
   ["maintenance", "warning_hours", "real"],
@@ -521,12 +527,52 @@ export function handler(req, res) {
       const aircraftById = new Map(state.aircraft.map((a) => [a.id, a]));
       state.maintenance = state.maintenance.map((item) => {
         const aircraft = aircraftById.get(item.aircraft_id),
-          timeBasis = item.due_time_basis === "hobbs" ? "hobbs" : "ttsn",
+          component = ["engine", "engine1", "engine2"].includes(item.component)
+            ? item.component
+            : "airframe",
+          timeBasis = ["hobbs", "ttsn", "engine_ttsn", "engine_ttsoh"].includes(
+            item.due_time_basis,
+          )
+            ? item.due_time_basis
+            : "ttsn",
+          cycleBasis = ["tcsn", "engine_tcsn", "engine_tcsoh"].includes(
+            item.due_cycle_basis,
+          )
+            ? item.due_cycle_basis
+            : "tcsn",
+          enginePrefix = component === "engine1"
+            ? "engine1"
+            : component === "engine2"
+              ? "engine2"
+              : "engine",
           trackedTime = timeBasis === "hobbs"
             ? Number(aircraft?.hobbs ?? aircraft?.time ?? 0)
-            : Number(aircraft?.ttsn ?? aircraft?.time ?? 0),
-          timeLabel = timeBasis === "hobbs" ? "Hobbs" : "TTSN",
-          totalCycles = Number(aircraft?.tcsn ?? aircraft?.cycles ?? 0),
+            : timeBasis === "engine_ttsn"
+              ? Number(aircraft?.[`${enginePrefix}_ttsn`] ?? 0)
+              : timeBasis === "engine_ttsoh"
+                ? Number(
+                    aircraft?.[`${enginePrefix}_ttsoh`] ??
+                      aircraft?.[`${enginePrefix}_tsmoh`] ??
+                      0,
+                  )
+                : Number(aircraft?.ttsn ?? aircraft?.time ?? 0),
+          timeLabel = timeBasis === "hobbs"
+            ? "Hobbs"
+            : timeBasis === "engine_ttsn"
+              ? "Engine TTSN"
+              : timeBasis === "engine_ttsoh"
+                ? "Engine TTSOH"
+                : "TTSN",
+          totalCycles = cycleBasis === "engine_tcsn"
+            ? Number(aircraft?.[`${enginePrefix}_tcsn`] ?? 0)
+            : cycleBasis === "engine_tcsoh"
+              ? Number(aircraft?.[`${enginePrefix}_tcsoh`] ?? 0)
+              : Number(aircraft?.tcsn ?? aircraft?.cycles ?? 0),
+          cycleLabel = cycleBasis === "engine_tcsn"
+            ? "Engine TCSN"
+            : cycleBasis === "engine_tcsoh"
+              ? "Engine TCSOH"
+              : "TCSN",
           hoursLeft = item.due_hours == null
             ? null
             : Number(item.due_hours) - trackedTime,
@@ -565,14 +611,16 @@ export function handler(req, res) {
           remainingParts = [
             hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr ${timeLabel}`,
             daysLeft == null ? null : `${daysLeft} days`,
-            cyclesLeft == null ? null : `${cyclesLeft} cycles`,
+            cyclesLeft == null ? null : `${cyclesLeft} cycles ${cycleLabel}`,
           ].filter(Boolean),
           remainingValues = [hoursLeft, daysLeft, cyclesLeft].filter(
             (value) => value != null,
           );
         return {
           ...item,
+          component,
           due_time_basis: timeBasis,
+          due_cycle_basis: cycleBasis,
           remaining: remainingValues.length ? Math.min(...remainingValues) : 0,
           remaining_label: remainingParts.join(" / ") || "No due limit set",
           status: overdue
@@ -773,6 +821,10 @@ export function handler(req, res) {
         db.prepare(
           `update aircraft set dz=?,time=?,hobbs=?,cycles=coalesce(?,cycles),
            ttsn=coalesce(ttsn,time)+?,tcsn=coalesce(tcsn,cycles)+?,
+           engine_ttsn=case when engine_ttsn is null then null else engine_ttsn+? end,
+           engine_ttsoh=case when engine_ttsoh is null then null else engine_ttsoh+? end,
+           engine_tcsn=case when engine_tcsn is null then null else engine_tcsn+? end,
+           engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end,
            engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
            engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
            engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
@@ -786,7 +838,9 @@ export function handler(req, res) {
            where id=?`,
         ).run(
           d.dz, +d.end_time, +d.end_time, d.end_cycles ?? null,
-          total, tc || 0, total, total, tc || 0, total, tc || 0,
+          total, tc || 0,
+          total, total, tc || 0, tc || 0,
+          total, total, tc || 0, total, tc || 0,
           total, total, tc || 0, total, tc || 0,
           d.aircraft_id,
         );
@@ -1089,6 +1143,10 @@ function updateAircraftTotals(id, timeDelta, cycleDelta) {
     `update aircraft set
       time=time+?,hobbs=coalesce(hobbs,time)+?,cycles=cycles+?,
       ttsn=coalesce(ttsn,time)+?,tcsn=coalesce(tcsn,cycles)+?,
+      engine_ttsn=case when engine_ttsn is null then null else engine_ttsn+? end,
+      engine_ttsoh=case when engine_ttsoh is null then null else engine_ttsoh+? end,
+      engine_tcsn=case when engine_tcsn is null then null else engine_tcsn+? end,
+      engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end,
       engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
       engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
       engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
@@ -1102,6 +1160,7 @@ function updateAircraftTotals(id, timeDelta, cycleDelta) {
       where id=?`,
   ).run(
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
+    timeDelta, timeDelta, cycleDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta, id,
   );
@@ -1110,6 +1169,10 @@ function updateAircraftCumulativeTotals(id, timeDelta, cycleDelta) {
   db.prepare(
     `update aircraft set
       cycles=cycles+?,ttsn=coalesce(ttsn,time)+?,tcsn=coalesce(tcsn,cycles)+?,
+      engine_ttsn=case when engine_ttsn is null then null else engine_ttsn+? end,
+      engine_ttsoh=case when engine_ttsoh is null then null else engine_ttsoh+? end,
+      engine_tcsn=case when engine_tcsn is null then null else engine_tcsn+? end,
+      engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end,
       engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
       engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
       engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
@@ -1123,6 +1186,7 @@ function updateAircraftCumulativeTotals(id, timeDelta, cycleDelta) {
       where id=?`,
   ).run(
     cycleDelta, timeDelta, cycleDelta,
+    timeDelta, timeDelta, cycleDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta, id,
   );

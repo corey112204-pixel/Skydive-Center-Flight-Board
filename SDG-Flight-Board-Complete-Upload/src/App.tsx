@@ -1516,7 +1516,9 @@ function Maintenance({
     if (!template) return;
     action({
       item: template.item,
+      component: template.component || "airframe",
       due_time_basis: template.due_time_basis || "ttsn",
+      due_cycle_basis: template.due_cycle_basis || "tcsn",
       warning_hours: template.warning_hours,
       warning_days: template.warning_days,
       warning_cycles: template.warning_cycles,
@@ -1655,6 +1657,12 @@ function Maintenance({
           <Field label="HOBBS"><input name="hobbs" type="number" min="0" step=".1" required defaultValue={ac.hobbs ?? ac.time} /></Field>
           <Field label="TTSN"><input name="ttsn" type="number" min="0" step=".1" required defaultValue={ac.ttsn ?? ac.time} /></Field>
           <Field label="TCSN"><input name="tcsn" type="number" min="0" step="1" required defaultValue={ac.tcsn ?? ac.cycles} /></Field>
+          {ac.type === "PAC 750" && <>
+            <Field label="ENGINE TTSN"><input name="engine_ttsn" type="number" min="0" step=".1" required defaultValue={ac.engine_ttsn ?? ""} /></Field>
+            <Field label="ENGINE TCSN"><input name="engine_tcsn" type="number" min="0" step="1" required defaultValue={ac.engine_tcsn ?? ""} /></Field>
+            <Field label="ENGINE TTSOH"><input name="engine_ttsoh" type="number" min="0" step=".1" required defaultValue={ac.engine_ttsoh ?? ""} /></Field>
+            <Field label="ENGINE TCSOH"><input name="engine_tcsoh" type="number" min="0" step="1" required defaultValue={ac.engine_tcsoh ?? ""} /></Field>
+          </>}
           {ac.type === "Twin Otter" && <>
             <Field label="ENGINE 1 TTSN"><input name="engine1_ttsn" type="number" min="0" step=".1" required defaultValue={ac.engine1_ttsn ?? ""} /></Field>
             <Field label="ENGINE 1 TSMOH"><input name="engine1_tsmoh" type="number" min="0" step=".1" required defaultValue={ac.engine1_tsmoh ?? ""} /></Field>
@@ -1680,6 +1688,15 @@ function Maintenance({
               <div className="grow">
                 <small>ITEM</small>
                 <b>{m.item}</b>
+                <small>
+                  {m.component === "engine1"
+                    ? "Engine 1"
+                    : m.component === "engine2"
+                      ? "Engine 2"
+                      : m.component === "engine"
+                        ? "Engine"
+                        : "Airframe"}
+                </small>
               </div>
               <div>
                 <small>DUE</small>
@@ -2615,6 +2632,10 @@ function DayModal({
           </div>
           {ac && <div className="current-values wide">
             <span><small>NEW TTSN</small><b>{projectedTtsn.toFixed(1)}</b></span>
+            {ac.type === "PAC 750" && <>
+              <span><small>ENGINE TTSN</small><b>{(Number(ac.engine_ttsn || 0) + counterDelta).toFixed(1)}</b></span>
+              <span><small>ENGINE TTSOH</small><b>{(Number(ac.engine_ttsoh || 0) + counterDelta).toFixed(1)}</b></span>
+            </>}
             {ac.type === "Twin Otter" && <>
               <span><small>ENG 1 TSMOH</small><b>{(Number(ac.engine1_tsmoh || 0) + counterDelta).toFixed(1)}</b></span>
               <span><small>ENG 1 TSHSI</small><b>{(Number(ac.engine1_tshsi || 0) + counterDelta).toFixed(1)}</b></span>
@@ -3088,6 +3109,11 @@ function AircraftModal({
               engine2_tshsi: number("engine2_tshsi"),
               engine2_tcsn: number("engine2_tcsn"),
               engine2_tcsoh: number("engine2_tcsoh"),
+            } : aircraftType === "PAC 750" ? {
+              engine_ttsn: number("engine_ttsn"),
+              engine_tcsn: number("engine_tcsn"),
+              engine_ttsoh: number("engine_ttsoh"),
+              engine_tcsoh: number("engine_tcsoh"),
             } : {}),
             dz: "Georgia",
             status: "Available",
@@ -3117,6 +3143,12 @@ function AircraftModal({
           <Field label="STARTING HOBBS"><input name="hobbs" required type="number" min="0" step=".1" placeholder="0.0" /></Field>
           <Field label="STARTING TTSN"><input name="ttsn" required type="number" min="0" step=".1" placeholder="0.0" /></Field>
           <Field label="STARTING TCSN"><input name="tcsn" required type="number" min="0" step="1" placeholder="0" /></Field>
+          {aircraftType === "PAC 750" && <>
+            <Field label="ENGINE TTSN"><input name="engine_ttsn" required type="number" min="0" step=".1" /></Field>
+            <Field label="ENGINE TCSN"><input name="engine_tcsn" required type="number" min="0" step="1" /></Field>
+            <Field label="ENGINE TTSOH"><input name="engine_ttsoh" required type="number" min="0" step=".1" /></Field>
+            <Field label="ENGINE TCSOH"><input name="engine_tcsoh" required type="number" min="0" step="1" /></Field>
+          </>}
           {aircraftType === "Twin Otter" && <>
             <Field label="ENGINE 1 TTSN"><input name="engine1_ttsn" required type="number" min="0" step=".1" /></Field>
             <Field label="ENGINE 1 TSMOH"><input name="engine1_tsmoh" required type="number" min="0" step=".1" /></Field>
@@ -3451,8 +3483,18 @@ function MaintenanceModal({
         const optionalNumber = (input: unknown) =>
             input === "" || input == null ? null : Number(input),
           dueHours = optionalNumber(d.due_hours),
-          timeBasis = d.due_time_basis === "hobbs" ? "hobbs" : "ttsn",
-          timeLabel = timeBasis === "hobbs" ? "Hobbs" : "TTSN",
+          component = ["engine", "engine1", "engine2"].includes(String(d.component))
+            ? String(d.component)
+            : "airframe",
+          enginePrefix = component === "engine1" ? "engine1" : component === "engine2" ? "engine2" : "engine",
+          timeBasis = ["hobbs", "ttsn", "engine_ttsn", "engine_ttsoh"].includes(String(d.due_time_basis))
+            ? String(d.due_time_basis)
+            : "ttsn",
+          cycleBasis = ["tcsn", "engine_tcsn", "engine_tcsoh"].includes(String(d.due_cycle_basis))
+            ? String(d.due_cycle_basis)
+            : "tcsn",
+          timeLabel = timeBasis === "hobbs" ? "Hobbs" : timeBasis === "engine_ttsn" ? "Engine TTSN" : timeBasis === "engine_ttsoh" ? "Engine TTSOH" : "TTSN",
+          cycleLabel = cycleBasis === "engine_tcsn" ? "Engine TCSN" : cycleBasis === "engine_tcsoh" ? "Engine TCSOH" : "TCSN",
           dueCycles = optionalNumber(d.due_cycles),
           warningHours = optionalNumber(d.warning_hours),
           warningDays = optionalNumber(d.warning_days),
@@ -3467,9 +3509,18 @@ function MaintenanceModal({
           dueDate = String(d.due_date || ""),
           trackedTime = timeBasis === "hobbs"
             ? Number(aircraft.hobbs ?? aircraft.time)
-            : Number(aircraft.ttsn ?? aircraft.time),
+            : timeBasis === "engine_ttsn"
+              ? Number(aircraft[`${enginePrefix}_ttsn`] ?? 0)
+              : timeBasis === "engine_ttsoh"
+                ? Number(aircraft[`${enginePrefix}_ttsoh`] ?? aircraft[`${enginePrefix}_tsmoh`] ?? 0)
+                : Number(aircraft.ttsn ?? aircraft.time),
+          trackedCycles = cycleBasis === "engine_tcsn"
+            ? Number(aircraft[`${enginePrefix}_tcsn`] ?? 0)
+            : cycleBasis === "engine_tcsoh"
+              ? Number(aircraft[`${enginePrefix}_tcsoh`] ?? 0)
+              : Number(aircraft.tcsn ?? aircraft.cycles),
           hoursLeft = dueHours == null ? null : dueHours - trackedTime,
-          cyclesLeft = dueCycles == null ? null : dueCycles - Number(aircraft.tcsn ?? aircraft.cycles),
+          cyclesLeft = dueCycles == null ? null : dueCycles - trackedCycles,
           daysLeft = !dueDate ? null : Math.ceil(
             (new Date(`${dueDate}T23:59:59`).getTime() - Date.now()) / 86400000,
           ),
@@ -3485,12 +3536,12 @@ function MaintenanceModal({
           dueParts = [
             dueHours == null ? null : `${dueHours.toFixed(1)} ${timeLabel}`,
             dueDate || null,
-            dueCycles == null ? null : `${dueCycles} cycles`,
+            dueCycles == null ? null : `${dueCycles} ${cycleLabel}`,
           ].filter(Boolean),
           remainingParts = [
             hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr ${timeLabel}`,
             daysLeft == null ? null : `${daysLeft} days`,
-            cyclesLeft == null ? null : `${cyclesLeft} cycles`,
+            cyclesLeft == null ? null : `${cyclesLeft} cycles ${cycleLabel}`,
           ].filter(Boolean),
           remainingValues = [hoursLeft, daysLeft, cyclesLeft].filter((x): x is number => x != null),
           warningValues = [warningHours, warningDays, warningCycles, warning2Hours, warning2Days, warning2Cycles].filter((x): x is number => x != null),
@@ -3498,7 +3549,9 @@ function MaintenanceModal({
         save({
           ...d,
           aircraft_id: aircraft.id,
+          component,
           due_time_basis: timeBasis,
+          due_cycle_basis: cycleBasis,
           due_hours: dueHours,
           due_date: dueDate || null,
           due_cycles: dueCycles,
@@ -3529,10 +3582,21 @@ function MaintenanceModal({
           placeholder="100 Hour Inspection"
         />
       </Field>
+      <Field label="MAINTENANCE SECTION">
+        <select name="component" defaultValue={value?.component || "airframe"}>
+          <option value="airframe">Airframe</option>
+          {aircraft?.type === "Twin Otter" ? <>
+            <option value="engine1">Engine 1</option>
+            <option value="engine2">Engine 2</option>
+          </> : <option value="engine">Engine</option>}
+        </select>
+      </Field>
       <Field label="TIME BASIS">
         <select name="due_time_basis" defaultValue={value?.due_time_basis || "ttsn"}>
-          <option value="ttsn">Total Time Since New (TTSN)</option>
-          <option value="hobbs">Hobbs</option>
+          <option value="ttsn">Airframe TTSN</option>
+          <option value="hobbs">Airframe Hobbs</option>
+          <option value="engine_ttsn">Engine TTSN</option>
+          <option value="engine_ttsoh">Engine TTSOH</option>
         </select>
       </Field>
       <Field label="DUE AT SELECTED AIRCRAFT TIME">
@@ -3561,6 +3625,13 @@ function MaintenanceModal({
           defaultValue={value?.due_cycles ?? ""}
           placeholder="Optional TCSN limit"
         />
+      </Field>
+      <Field label="CYCLE BASIS">
+        <select name="due_cycle_basis" defaultValue={value?.due_cycle_basis || "tcsn"}>
+          <option value="tcsn">Airframe TCSN</option>
+          <option value="engine_tcsn">Engine TCSN</option>
+          <option value="engine_tcsoh">Engine TCSOH</option>
+        </select>
       </Field>
       <Field label="WARNING — HOURS BEFORE">
         <input
