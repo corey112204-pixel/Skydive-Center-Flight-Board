@@ -111,6 +111,30 @@ test("authorization rejects pilot maintenance writes", async () => {
   );
   assert.equal(r.status, 403);
 });
+test("maintenance frequency can be stored in calendar months", async () => {
+  const created = await call(
+    "/maintenance",
+    "POST",
+    {
+      aircraft_id: "a1",
+      item: "Annual inspection",
+      due: "2030-10-01",
+      remaining: 365,
+      warning: 30,
+      status: "OK",
+      due_date: "2030-10-01",
+      interval_months: 12,
+    },
+    "maintenance",
+  );
+  assert.equal(created.status, 201);
+  assert.equal(
+    db
+      .prepare("select interval_months from maintenance where id=?")
+      .get(created.data.id).interval_months,
+    12,
+  );
+});
 test("maintenance can reserve an aircraft but cannot schedule pilots", async () => {
   const date = "2030-04-12";
   const mx = await call(

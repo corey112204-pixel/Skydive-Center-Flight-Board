@@ -1524,6 +1524,7 @@ function Maintenance({
       warning2_cycles: template.warning2_cycles,
       interval_hours: template.interval_hours,
       interval_days: template.interval_days,
+      interval_months: template.interval_months,
       interval_cycles: template.interval_cycles,
     });
   };
@@ -3458,6 +3459,7 @@ function MaintenanceModal({
           warning2Cycles = showSecondWarning ? optionalNumber(d.warning2_cycles) : null,
           intervalHours = optionalNumber(d.interval_hours),
           intervalDays = optionalNumber(d.interval_days),
+          intervalMonths = optionalNumber(d.interval_months),
           intervalCycles = optionalNumber(d.interval_cycles),
           dueDate = String(d.due_date || ""),
           hoursLeft = dueHours == null ? null : dueHours - Number(aircraft.hobbs ?? aircraft.time),
@@ -3506,6 +3508,7 @@ function MaintenanceModal({
           remaining_label: remainingParts.join(" / ") || "No due limit set",
           interval_hours: intervalHours,
           interval_days: intervalDays,
+          interval_months: intervalMonths,
           interval_cycles: intervalCycles,
           status: overdue ? "Overdue" : soon ? "Due soon" : dueParts.length ? "OK" : "Tracking",
         });
@@ -3604,6 +3607,16 @@ function MaintenanceModal({
           step="1"
           defaultValue={value?.interval_days || ""}
           placeholder="Example: 365"
+        />
+      </Field>
+      <Field label="REPEAT EVERY — CALENDAR MONTHS">
+        <input
+          name="interval_months"
+          type="number"
+          min="1"
+          step="1"
+          defaultValue={value?.interval_months ?? ""}
+          placeholder="Example: 12"
         />
       </Field>
       <Field label="REPEAT EVERY — CYCLES">

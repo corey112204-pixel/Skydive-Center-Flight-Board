@@ -73,6 +73,7 @@ for (const [table, column, type] of [
   ["maintenance", "remaining_label", "text"],
   ["maintenance", "interval_hours", "real"],
   ["maintenance", "interval_days", "integer"],
+  ["maintenance", "interval_months", "integer"],
   ["maintenance", "interval_cycles", "integer"],
   ["flight_records", "archived_at", "text"],
 ])
