@@ -61,6 +61,7 @@ for (const [table, column, type] of [
   ["pilots", "certificate_type", "text"],
   ["pilots", "notes", "text"],
   ["maintenance", "due_kind", "text"],
+  ["maintenance", "due_time_basis", "text"],
   ["maintenance", "due_hours", "real"],
   ["maintenance", "due_date", "text"],
   ["maintenance", "warning_hours", "real"],
@@ -520,11 +521,15 @@ export function handler(req, res) {
       const aircraftById = new Map(state.aircraft.map((a) => [a.id, a]));
       state.maintenance = state.maintenance.map((item) => {
         const aircraft = aircraftById.get(item.aircraft_id),
-          totalTime = Number(aircraft?.ttsn ?? aircraft?.time ?? 0),
+          timeBasis = item.due_time_basis === "hobbs" ? "hobbs" : "ttsn",
+          trackedTime = timeBasis === "hobbs"
+            ? Number(aircraft?.hobbs ?? aircraft?.time ?? 0)
+            : Number(aircraft?.ttsn ?? aircraft?.time ?? 0),
+          timeLabel = timeBasis === "hobbs" ? "Hobbs" : "TTSN",
           totalCycles = Number(aircraft?.tcsn ?? aircraft?.cycles ?? 0),
           hoursLeft = item.due_hours == null
             ? null
-            : Number(item.due_hours) - totalTime,
+            : Number(item.due_hours) - trackedTime,
           cyclesLeft = item.due_cycles == null
             ? null
             : Number(item.due_cycles) - totalCycles,
@@ -558,7 +563,7 @@ export function handler(req, res) {
               item.warning2_cycles != null &&
               cyclesLeft <= Number(item.warning2_cycles)),
           remainingParts = [
-            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr TTSN`,
+            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr ${timeLabel}`,
             daysLeft == null ? null : `${daysLeft} days`,
             cyclesLeft == null ? null : `${cyclesLeft} cycles`,
           ].filter(Boolean),
@@ -567,6 +572,7 @@ export function handler(req, res) {
           );
         return {
           ...item,
+          due_time_basis: timeBasis,
           remaining: remainingValues.length ? Math.min(...remainingValues) : 0,
           remaining_label: remainingParts.join(" / ") || "No due limit set",
           status: overdue

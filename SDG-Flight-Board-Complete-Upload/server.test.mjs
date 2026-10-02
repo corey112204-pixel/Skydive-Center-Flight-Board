@@ -165,6 +165,39 @@ test("maintenance due time is calculated from aircraft TTSN", async () => {
   assert.equal(item.remaining_label, "1.5 hr TTSN");
   assert.equal(item.status, "Due soon");
 });
+test("maintenance due time can be calculated from Hobbs", async () => {
+  const aircraft = db.prepare("select * from aircraft where id='a2'").get();
+  const dueHobbs = Number(aircraft.hobbs) + 3;
+  const created = await call(
+    "/maintenance",
+    "POST",
+    {
+      aircraft_id: "a2",
+      item: "Hobbs based service",
+      due: `${dueHobbs.toFixed(1)} Hobbs`,
+      remaining: 3,
+      warning: 1,
+      status: "OK",
+      due_time_basis: "hobbs",
+      due_hours: dueHobbs,
+      warning_hours: 1,
+    },
+    "maintenance",
+  );
+  assert.equal(created.status, 201);
+  let state = await call("/state", "GET", undefined, "maintenance");
+  let item = state.data.maintenance.find((entry) => entry.id === created.data.id);
+  assert.equal(item.remaining_label, "3.0 hr Hobbs");
+
+  db.prepare("update aircraft set hobbs=?,time=? where id='a2'").run(
+    dueHobbs - 0.5,
+    dueHobbs - 0.5,
+  );
+  state = await call("/state", "GET", undefined, "maintenance");
+  item = state.data.maintenance.find((entry) => entry.id === created.data.id);
+  assert.equal(item.remaining_label, "0.5 hr Hobbs");
+  assert.equal(item.status, "Due soon");
+});
 test("maintenance can reserve an aircraft but cannot schedule pilots", async () => {
   const date = "2030-04-12";
   const mx = await call(

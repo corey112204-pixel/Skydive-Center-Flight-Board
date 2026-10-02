@@ -1516,6 +1516,7 @@ function Maintenance({
     if (!template) return;
     action({
       item: template.item,
+      due_time_basis: template.due_time_basis || "ttsn",
       warning_hours: template.warning_hours,
       warning_days: template.warning_days,
       warning_cycles: template.warning_cycles,
@@ -3450,6 +3451,8 @@ function MaintenanceModal({
         const optionalNumber = (input: unknown) =>
             input === "" || input == null ? null : Number(input),
           dueHours = optionalNumber(d.due_hours),
+          timeBasis = d.due_time_basis === "hobbs" ? "hobbs" : "ttsn",
+          timeLabel = timeBasis === "hobbs" ? "Hobbs" : "TTSN",
           dueCycles = optionalNumber(d.due_cycles),
           warningHours = optionalNumber(d.warning_hours),
           warningDays = optionalNumber(d.warning_days),
@@ -3462,7 +3465,10 @@ function MaintenanceModal({
           intervalMonths = optionalNumber(d.interval_months),
           intervalCycles = optionalNumber(d.interval_cycles),
           dueDate = String(d.due_date || ""),
-          hoursLeft = dueHours == null ? null : dueHours - Number(aircraft.ttsn ?? aircraft.time),
+          trackedTime = timeBasis === "hobbs"
+            ? Number(aircraft.hobbs ?? aircraft.time)
+            : Number(aircraft.ttsn ?? aircraft.time),
+          hoursLeft = dueHours == null ? null : dueHours - trackedTime,
           cyclesLeft = dueCycles == null ? null : dueCycles - Number(aircraft.tcsn ?? aircraft.cycles),
           daysLeft = !dueDate ? null : Math.ceil(
             (new Date(`${dueDate}T23:59:59`).getTime() - Date.now()) / 86400000,
@@ -3477,12 +3483,12 @@ function MaintenanceModal({
             (daysLeft != null && warning2Days != null && daysLeft <= warning2Days) ||
             (cyclesLeft != null && warning2Cycles != null && cyclesLeft <= warning2Cycles),
           dueParts = [
-            dueHours == null ? null : `${dueHours.toFixed(1)} TTSN`,
+            dueHours == null ? null : `${dueHours.toFixed(1)} ${timeLabel}`,
             dueDate || null,
             dueCycles == null ? null : `${dueCycles} cycles`,
           ].filter(Boolean),
           remainingParts = [
-            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr TTSN`,
+            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr ${timeLabel}`,
             daysLeft == null ? null : `${daysLeft} days`,
             cyclesLeft == null ? null : `${cyclesLeft} cycles`,
           ].filter(Boolean),
@@ -3492,6 +3498,7 @@ function MaintenanceModal({
         save({
           ...d,
           aircraft_id: aircraft.id,
+          due_time_basis: timeBasis,
           due_hours: dueHours,
           due_date: dueDate || null,
           due_cycles: dueCycles,
@@ -3522,14 +3529,20 @@ function MaintenanceModal({
           placeholder="100 Hour Inspection"
         />
       </Field>
-      <Field label="DUE AT AIRCRAFT TOTAL TIME (TTSN)">
+      <Field label="TIME BASIS">
+        <select name="due_time_basis" defaultValue={value?.due_time_basis || "ttsn"}>
+          <option value="ttsn">Total Time Since New (TTSN)</option>
+          <option value="hobbs">Hobbs</option>
+        </select>
+      </Field>
+      <Field label="DUE AT SELECTED AIRCRAFT TIME">
         <input
           name="due_hours"
           type="number"
           min="0"
           step=".1"
           defaultValue={value?.due_hours || ""}
-          placeholder="Enter the due TTSN"
+          placeholder="Enter the due time"
         />
       </Field>
       <Field label="DUE DATE">
