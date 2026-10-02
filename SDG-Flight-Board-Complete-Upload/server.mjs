@@ -517,6 +517,67 @@ export function handler(req, res) {
           )
           .get(p.id),
       }));
+      const aircraftById = new Map(state.aircraft.map((a) => [a.id, a]));
+      state.maintenance = state.maintenance.map((item) => {
+        const aircraft = aircraftById.get(item.aircraft_id),
+          totalTime = Number(aircraft?.ttsn ?? aircraft?.time ?? 0),
+          totalCycles = Number(aircraft?.tcsn ?? aircraft?.cycles ?? 0),
+          hoursLeft = item.due_hours == null
+            ? null
+            : Number(item.due_hours) - totalTime,
+          cyclesLeft = item.due_cycles == null
+            ? null
+            : Number(item.due_cycles) - totalCycles,
+          daysLeft = !item.due_date
+            ? null
+            : Math.ceil(
+                (new Date(`${item.due_date}T23:59:59`).getTime() - Date.now()) /
+                  86400000,
+              ),
+          overdue =
+            (hoursLeft != null && hoursLeft <= 0) ||
+            (daysLeft != null && daysLeft <= 0) ||
+            (cyclesLeft != null && cyclesLeft <= 0),
+          soon =
+            (hoursLeft != null &&
+              item.warning_hours != null &&
+              hoursLeft <= Number(item.warning_hours)) ||
+            (daysLeft != null &&
+              item.warning_days != null &&
+              daysLeft <= Number(item.warning_days)) ||
+            (cyclesLeft != null &&
+              item.warning_cycles != null &&
+              cyclesLeft <= Number(item.warning_cycles)) ||
+            (hoursLeft != null &&
+              item.warning2_hours != null &&
+              hoursLeft <= Number(item.warning2_hours)) ||
+            (daysLeft != null &&
+              item.warning2_days != null &&
+              daysLeft <= Number(item.warning2_days)) ||
+            (cyclesLeft != null &&
+              item.warning2_cycles != null &&
+              cyclesLeft <= Number(item.warning2_cycles)),
+          remainingParts = [
+            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr TTSN`,
+            daysLeft == null ? null : `${daysLeft} days`,
+            cyclesLeft == null ? null : `${cyclesLeft} cycles`,
+          ].filter(Boolean),
+          remainingValues = [hoursLeft, daysLeft, cyclesLeft].filter(
+            (value) => value != null,
+          );
+        return {
+          ...item,
+          remaining: remainingValues.length ? Math.min(...remainingValues) : 0,
+          remaining_label: remainingParts.join(" / ") || "No due limit set",
+          status: overdue
+            ? "Overdue"
+            : soon
+              ? "Due soon"
+              : remainingParts.length
+                ? "OK"
+                : "Tracking",
+        };
+      });
       state.notifications = state.notifications
         .filter((notification) =>
           db

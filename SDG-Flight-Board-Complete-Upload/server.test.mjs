@@ -135,6 +135,36 @@ test("maintenance frequency can be stored in calendar months", async () => {
     12,
   );
 });
+test("maintenance due time is calculated from aircraft TTSN", async () => {
+  const aircraft = db.prepare("select * from aircraft where id='a1'").get();
+  const dueTtsn = Number(aircraft.ttsn) + 10;
+  const created = await call(
+    "/maintenance",
+    "POST",
+    {
+      aircraft_id: "a1",
+      item: "TTSN based inspection",
+      due: `${dueTtsn.toFixed(1)} TTSN`,
+      remaining: 10,
+      warning: 2,
+      status: "OK",
+      due_hours: dueTtsn,
+      warning_hours: 2,
+    },
+    "maintenance",
+  );
+  assert.equal(created.status, 201);
+  let state = await call("/state", "GET", undefined, "maintenance");
+  let item = state.data.maintenance.find((entry) => entry.id === created.data.id);
+  assert.equal(item.remaining_label, "10.0 hr TTSN");
+  assert.equal(item.status, "OK");
+
+  db.prepare("update aircraft set ttsn=? where id='a1'").run(dueTtsn - 1.5);
+  state = await call("/state", "GET", undefined, "maintenance");
+  item = state.data.maintenance.find((entry) => entry.id === created.data.id);
+  assert.equal(item.remaining_label, "1.5 hr TTSN");
+  assert.equal(item.status, "Due soon");
+});
 test("maintenance can reserve an aircraft but cannot schedule pilots", async () => {
   const date = "2030-04-12";
   const mx = await call(

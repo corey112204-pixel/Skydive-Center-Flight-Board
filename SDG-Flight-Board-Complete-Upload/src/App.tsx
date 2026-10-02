@@ -3462,7 +3462,7 @@ function MaintenanceModal({
           intervalMonths = optionalNumber(d.interval_months),
           intervalCycles = optionalNumber(d.interval_cycles),
           dueDate = String(d.due_date || ""),
-          hoursLeft = dueHours == null ? null : dueHours - Number(aircraft.hobbs ?? aircraft.time),
+          hoursLeft = dueHours == null ? null : dueHours - Number(aircraft.ttsn ?? aircraft.time),
           cyclesLeft = dueCycles == null ? null : dueCycles - Number(aircraft.tcsn ?? aircraft.cycles),
           daysLeft = !dueDate ? null : Math.ceil(
             (new Date(`${dueDate}T23:59:59`).getTime() - Date.now()) / 86400000,
@@ -3477,12 +3477,12 @@ function MaintenanceModal({
             (daysLeft != null && warning2Days != null && daysLeft <= warning2Days) ||
             (cyclesLeft != null && warning2Cycles != null && cyclesLeft <= warning2Cycles),
           dueParts = [
-            dueHours == null ? null : `${dueHours.toFixed(1)} Hobbs`,
+            dueHours == null ? null : `${dueHours.toFixed(1)} TTSN`,
             dueDate || null,
             dueCycles == null ? null : `${dueCycles} cycles`,
           ].filter(Boolean),
           remainingParts = [
-            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr`,
+            hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr TTSN`,
             daysLeft == null ? null : `${daysLeft} days`,
             cyclesLeft == null ? null : `${cyclesLeft} cycles`,
           ].filter(Boolean),
@@ -3522,14 +3522,14 @@ function MaintenanceModal({
           placeholder="100 Hour Inspection"
         />
       </Field>
-      <Field label="DUE AT AIRCRAFT TIME">
+      <Field label="DUE AT AIRCRAFT TOTAL TIME (TTSN)">
         <input
           name="due_hours"
           type="number"
           min="0"
           step=".1"
           defaultValue={value?.due_hours || ""}
-          placeholder="12600.0"
+          placeholder="Enter the due TTSN"
         />
       </Field>
       <Field label="DUE DATE">
