@@ -1804,6 +1804,7 @@ function Maintenance({
                         <i className={`dot ${component.life_status === "Limit reached" ? "danger" : component.life_status === "Approaching limit" || component.life_status === "Unverified" ? "warning" : "success"}`} />
                         <b>{component.description}</b>
                         <small>P/N {component.part_number} · S/N {component.serial_number}</small>
+                        <small>S {component.starts_since_baseline} · F {component.flights_since_baseline} · ACF {component.acf} · FCF {component.fcf}</small>
                       </span>
                       <b>{component.current_cycles == null ? "Review" : Number(component.current_cycles).toFixed(1)}</b>
                       <b>{Number(component.max_cycles).toFixed(1)}</b>
@@ -3719,7 +3720,7 @@ function EngineComponentModal({
   return (
     <ModalShell
       title={replacement ? `Replace ${value?.description}` : value?.id ? "Edit life-limited component" : `Add component · ${engine?.position}`}
-      desc="Use only values and factors supported by current approved maintenance documentation. Enter 0 when an ACF or FCF is documented as not applicable."
+      desc="Use only values and factors supported by current approved maintenance documentation."
       close={close}
     >
       <form onSubmit={(event) => {
@@ -3748,6 +3749,13 @@ function EngineComponentModal({
         });
       }}>
         <div className="form-grid">
+          <div className="both-note wide">
+            <CircleGauge />
+            <span>
+              <b>PT6A component-cycle calculation</b>
+              <small>Accumulated cycles = [S + (F − S) ÷ ACF] × FCF. Current cycles = documented base cycles + accumulated cycles.</small>
+            </span>
+          </div>
           {replacement && <>
             <div className="both-note wide"><Wrench /><span><b>Removed component</b><small>{value?.part_number} · S/N {value?.serial_number} · {value?.current_cycles == null ? "cycles require review" : `${Number(value.current_cycles).toFixed(1)} calculated cycles`}</small></span></div>
             <Field label="REMOVAL DATE"><input name="removed_at" type="date" required defaultValue={localDate()} /></Field>
@@ -3760,8 +3768,8 @@ function EngineComponentModal({
           <Field label="DOCUMENTED COMPONENT CYCLES AT BASELINE"><input name="baseline_component_cycles" type="number" min="0" step=".1" required defaultValue={replacement ? "" : value?.baseline_component_cycles ?? ""} /></Field>
           <Field label="ENGINE STARTS AT BASELINE"><input name="baseline_engine_starts" type="number" min="0" step="1" required defaultValue={replacement ? engine?.total_starts ?? "" : value?.baseline_engine_starts ?? engine?.total_starts ?? ""} /></Field>
           <Field label="ENGINE FLIGHTS AT BASELINE"><input name="baseline_engine_flights" type="number" min="0" step="1" required defaultValue={replacement ? engine?.total_flights ?? "" : value?.baseline_engine_flights ?? engine?.total_flights ?? ""} /></Field>
-          <Field label="ABBREVIATED CYCLE FACTOR (ACF)"><input name="acf" type="number" min="0" step=".0001" required defaultValue={replacement ? "" : value?.acf ?? ""} /></Field>
-          <Field label="FLIGHT COUNT FACTOR (FCF)"><input name="fcf" type="number" min="0" step=".0001" required defaultValue={replacement ? "" : value?.fcf ?? ""} /></Field>
+          <Field label="ABBREVIATED CYCLE FACTOR (ACF)"><input name="acf" type="number" min=".0001" step=".0001" required defaultValue={replacement ? "" : value?.acf ?? ""} /></Field>
+          <Field label="FLIGHT COUNT FACTOR (FCF)"><input name="fcf" type="number" min=".0001" step=".0001" required defaultValue={replacement ? "" : value?.fcf ?? ""} /></Field>
           <Field label="ADVANCE WARNING — REMAINING CYCLES"><input name="warning_cycles" type="number" min="0" step="1" required defaultValue={replacement ? value?.warning_cycles ?? 250 : value?.warning_cycles ?? 250} /></Field>
           <Field label="INSTALLATION / TRACKING BASELINE DATE"><input name="installation_date" type="date" required defaultValue={replacement ? localDate() : value?.installation_date || localDate()} /></Field>
           <Field label="APPROVED MANUAL / SERVICE BULLETIN REFERENCE" wide><textarea name="source_reference" required defaultValue={replacement ? "" : value?.source_reference || ""} placeholder="Manual chapter/revision, service bulletin, or other approved source" /></Field>

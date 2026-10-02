@@ -583,7 +583,7 @@ export function handler(req, res) {
       const engineById = new Map(state.engines.map((engine) => [engine.id, engine]));
       state.engine_components = state.engine_components.map((component) => {
         const engine = engineById.get(component.engine_id),
-          factorsComplete = component.acf != null && component.fcf != null,
+          factorsComplete = Number(component.acf) > 0 && Number(component.fcf) > 0,
           startsDelta = Math.max(
             0,
             Number(engine?.total_starts || 0) - Number(component.baseline_engine_starts),
@@ -592,11 +592,15 @@ export function handler(req, res) {
             0,
             Number(engine?.total_flights || 0) - Number(component.baseline_engine_flights),
           ),
-          currentCycles = factorsComplete
-            ? Number(component.baseline_component_cycles) +
-              startsDelta * Number(component.acf) +
-              flightsDelta * Number(component.fcf)
+          equivalentCycles = factorsComplete && flightsDelta >= startsDelta
+            ? (
+                startsDelta +
+                (flightsDelta - startsDelta) / Number(component.acf)
+              ) * Number(component.fcf)
             : null,
+          currentCycles = equivalentCycles == null
+            ? null
+            : Number(component.baseline_component_cycles) + equivalentCycles,
           remainingCycles = currentCycles == null
             ? null
             : Number(component.max_cycles) - currentCycles,
@@ -613,6 +617,7 @@ export function handler(req, res) {
           ...component,
           starts_since_baseline: startsDelta,
           flights_since_baseline: flightsDelta,
+          equivalent_cycles_since_baseline: equivalentCycles,
           current_cycles: currentCycles,
           remaining_cycles: remainingCycles,
           percent_remaining: percentRemaining,
@@ -820,8 +825,8 @@ export function handler(req, res) {
         "removed_at",
         "removed_details",
       ]);
-      if (d.acf == null || d.fcf == null)
-        throw Error("Enter both ACF and FCF; use 0 when a factor is not applicable");
+      if (!(Number(d.acf) > 0) || !(Number(d.fcf) > 0))
+        throw Error("ACF and FCF must both be greater than zero");
       const id = randomUUID(), timestamp = now();
       db.exec("begin immediate");
       try {
@@ -1269,8 +1274,8 @@ export function handler(req, res) {
       if (resource === "engine_components") {
         d.created_at = d.created_at || now();
         d.source_verified = d.source_verified ? 1 : 0;
-        if (d.acf == null || d.fcf == null)
-          throw Error("Enter both ACF and FCF; use 0 when a factor is not applicable");
+        if (!(Number(d.acf) > 0) || !(Number(d.fcf) > 0))
+          throw Error("ACF and FCF must both be greater than zero");
       }
       validate(resource, d);
       if (resource === "schedules") validateSchedule(d);
@@ -1303,8 +1308,8 @@ export function handler(req, res) {
           d.source_verified = d.source_verified ? 1 : 0;
         const merged = { ...old, ...d };
         validate(resource, merged);
-        if (merged.acf == null || merged.fcf == null)
-          throw Error("Enter both ACF and FCF; use 0 when a factor is not applicable");
+        if (!(Number(merged.acf) > 0) || !(Number(merged.fcf) > 0))
+          throw Error("ACF and FCF must both be greater than zero");
       }
       if (resource === "engines") validate(resource, { ...old, ...d });
       const cols = Object.keys(d);
@@ -1381,6 +1386,8 @@ function replaceEngineOperations(
       throw Error("Engine starts must be a whole number of zero or more");
     if (!Number.isInteger(flights) || flights < 0)
       throw Error("Engine flights must be a whole number of zero or more");
+    if (flights < starts)
+      throw Error("Engine flights cannot be less than engine starts");
   }
   if (requireWhenConfigured && configured.length && !operations.length)
     throw Error("Select the engines that operated");

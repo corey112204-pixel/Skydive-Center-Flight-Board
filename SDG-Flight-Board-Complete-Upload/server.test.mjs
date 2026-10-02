@@ -621,8 +621,8 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       baseline_component_cycles: 100,
       baseline_engine_starts: 100,
       baseline_engine_flights: 1000,
-      acf: 0.25,
-      fcf: 0.5,
+      acf: 4,
+      fcf: 1,
       warning_cycles: 250,
       source_reference: "",
       installation_date: "2031-01-01",
@@ -643,8 +643,8 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       baseline_component_cycles: 100,
       baseline_engine_starts: 100,
       baseline_engine_flights: 1000,
-      acf: 0.25,
-      fcf: 0.5,
+      acf: 4,
+      fcf: 1,
       warning_cycles: 250,
       source_reference: "P&WC MM TEST REV A",
       source_verified: true,
@@ -688,8 +688,9 @@ test("PT6A component cycles follow configured factors and recalculate after corr
   assert.equal(trackedEngine.total_starts, 101);
   assert.equal(trackedEngine.total_flights, 1004);
   assert.equal(trackedEngine.current_ttsn, 5001);
-  assert.equal(trackedComponent.current_cycles, 102.25);
-  assert.equal(trackedComponent.remaining_cycles, 1897.75);
+  assert.equal(trackedComponent.equivalent_cycles_since_baseline, 1.75);
+  assert.equal(trackedComponent.current_cycles, 101.75);
+  assert.equal(trackedComponent.remaining_cycles, 1898.25);
   assert.equal(trackedComponent.verification_status, "Verified");
 
   const duplicate = await call(
@@ -725,7 +726,8 @@ test("PT6A component cycles follow configured factors and recalculate after corr
   assert.equal(corrected.status, 200);
   state = await call("/state", "GET", undefined, "maintenance");
   trackedComponent = state.data.engine_components.find((entry) => entry.id === component.data.id);
-  assert.equal(trackedComponent.current_cycles, 103);
+  assert.equal(trackedComponent.equivalent_cycles_since_baseline, 2.75);
+  assert.equal(trackedComponent.current_cycles, 102.75);
 
   const replacement = await call(
     `/engine_components/${component.data.id}/replace`,
@@ -738,8 +740,8 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       baseline_component_cycles: 50,
       baseline_engine_starts: 102,
       baseline_engine_flights: 1005,
-      acf: 0.2,
-      fcf: 0.4,
+      acf: 4,
+      fcf: 1,
       warning_cycles: 100,
       source_reference: "P&WC MM TEST REV B",
       source_verified: true,
