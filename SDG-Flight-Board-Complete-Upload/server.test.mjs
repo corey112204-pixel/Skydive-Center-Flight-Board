@@ -584,3 +584,175 @@ test("deleting a daily record archives it and reverses aircraft totals", async (
   const state = await call("/state");
   assert(!state.data.flight_records.some((record) => record.id === created.data.id));
 });
+test("PT6A component cycles follow configured factors and recalculate after corrections", async () => {
+  db.prepare(
+    `insert into aircraft(id,tail,type,dz,status,time,cycles,maint,hobbs,ttsn,tcsn)
+     values('a-pt6','N999PT','PAC 750','Georgia','Available',1000,800,'Current',1000,5000,800)`,
+  ).run();
+  const engine = await call(
+    "/engines",
+    "POST",
+    {
+      aircraft_id: "a-pt6",
+      position: "Engine",
+      model: "PT6A-34",
+      serial_number: "PCE-TEST",
+      baseline_ttsn: 5000,
+      baseline_csn: 800,
+      baseline_starts: 100,
+      baseline_flights: 1000,
+      cycle_basis: "flights",
+      tracking_start_date: "2031-01-01",
+      source_reference: "Engine logbook baseline",
+    },
+    "maintenance",
+  );
+  assert.equal(engine.status, 201);
+
+  const unreferenced = await call(
+    "/engine_components",
+    "POST",
+    {
+      engine_id: engine.data.id,
+      description: "Compressor disk",
+      part_number: "PN-1",
+      serial_number: "SN-1",
+      max_cycles: 2000,
+      baseline_component_cycles: 100,
+      baseline_engine_starts: 100,
+      baseline_engine_flights: 1000,
+      acf: 0.25,
+      fcf: 0.5,
+      warning_cycles: 250,
+      source_reference: "",
+      installation_date: "2031-01-01",
+    },
+    "maintenance",
+  );
+  assert.equal(unreferenced.status, 400);
+
+  const component = await call(
+    "/engine_components",
+    "POST",
+    {
+      engine_id: engine.data.id,
+      description: "Compressor disk",
+      part_number: "PN-1",
+      serial_number: "SN-1",
+      max_cycles: 2000,
+      baseline_component_cycles: 100,
+      baseline_engine_starts: 100,
+      baseline_engine_flights: 1000,
+      acf: 0.25,
+      fcf: 0.5,
+      warning_cycles: 250,
+      source_reference: "P&WC MM TEST REV A",
+      source_verified: true,
+      installation_date: "2031-01-01",
+      maintenance_record: "WO-100",
+    },
+    "maintenance",
+  );
+  assert.equal(component.status, 201);
+  const pilotDenied = await call(
+    "/engine_components",
+    "POST",
+    { ...component.data, serial_number: "DENIED" },
+    "pilot",
+  );
+  assert.equal(pilotDenied.status, 403);
+
+  const flight = await call(
+    "/flight_records",
+    "POST",
+    {
+      aircraft_id: "a-pt6",
+      pilot_id: "p1",
+      dz: "Georgia",
+      flight_date: "2031-01-02",
+      start_time: 1000,
+      end_time: 1001,
+      start_cycles: 800,
+      end_cycles: 804,
+      loads: 4,
+      engine_operations: [
+        { engine_id: engine.data.id, starts: 1, flights: 4 },
+      ],
+    },
+    "pilot",
+  );
+  assert.equal(flight.status, 201);
+  let state = await call("/state", "GET", undefined, "maintenance");
+  let trackedEngine = state.data.engines.find((entry) => entry.id === engine.data.id);
+  let trackedComponent = state.data.engine_components.find((entry) => entry.id === component.data.id);
+  assert.equal(trackedEngine.total_starts, 101);
+  assert.equal(trackedEngine.total_flights, 1004);
+  assert.equal(trackedEngine.current_ttsn, 5001);
+  assert.equal(trackedComponent.current_cycles, 102.25);
+  assert.equal(trackedComponent.remaining_cycles, 1897.75);
+  assert.equal(trackedComponent.verification_status, "Verified");
+
+  const duplicate = await call(
+    "/flight_records",
+    "POST",
+    {
+      aircraft_id: "a-pt6",
+      pilot_id: "p1",
+      dz: "Georgia",
+      flight_date: "2031-01-02",
+      start_time: 1000,
+      end_time: 1001,
+      start_cycles: 800,
+      end_cycles: 804,
+      loads: 4,
+      engine_operations: [{ engine_id: engine.data.id, starts: 1, flights: 4 }],
+    },
+    "pilot",
+  );
+  assert.equal(duplicate.status, 400);
+  assert.match(duplicate.data.error, /already exists/i);
+
+  const corrected = await call(
+    `/flight_records/${flight.data.id}`,
+    "PUT",
+    {
+      engine_operations: [
+        { engine_id: engine.data.id, starts: 2, flights: 5 },
+      ],
+    },
+    "pilot",
+  );
+  assert.equal(corrected.status, 200);
+  state = await call("/state", "GET", undefined, "maintenance");
+  trackedComponent = state.data.engine_components.find((entry) => entry.id === component.data.id);
+  assert.equal(trackedComponent.current_cycles, 103);
+
+  const replacement = await call(
+    `/engine_components/${component.data.id}/replace`,
+    "POST",
+    {
+      description: "Compressor disk",
+      part_number: "PN-2",
+      serial_number: "SN-2",
+      max_cycles: 2500,
+      baseline_component_cycles: 50,
+      baseline_engine_starts: 102,
+      baseline_engine_flights: 1005,
+      acf: 0.2,
+      fcf: 0.4,
+      warning_cycles: 100,
+      source_reference: "P&WC MM TEST REV B",
+      source_verified: true,
+      installation_date: "2031-01-03",
+      maintenance_record: "WO-101",
+      removed_at: "2031-01-03",
+      removed_details: "Removed under WO-101",
+    },
+    "maintenance",
+  );
+  assert.equal(replacement.status, 201);
+  state = await call("/state", "GET", undefined, "maintenance");
+  assert(!state.data.engine_components.some((entry) => entry.id === component.data.id));
+  assert(state.data.engine_component_history.some((entry) => entry.id === component.data.id));
+  assert(state.data.engine_components.some((entry) => entry.id === replacement.data.id));
+});

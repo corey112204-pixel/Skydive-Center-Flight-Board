@@ -27,6 +27,26 @@ create table if not exists documents(id text primary key,folder text not null,fi
 create table if not exists audit_logs(id text primary key,action text not null,entity text not null,entity_id text,old_value text,new_value text,actor_role text not null,created_at text not null);`);
 db.exec(`create table if not exists users(id text primary key,email text not null unique,name text not null,role text not null,pilot_id text,active integer not null default 1,password_hash text not null,must_change_password integer not null default 1,created_at text not null,updated_at text not null);
 create table if not exists sessions(token text primary key,user_id text not null,expires_at text not null,created_at text not null,foreign key(user_id) references users(id) on delete cascade);`);
+db.exec(`create table if not exists engines(
+  id text primary key,aircraft_id text not null,position text not null,model text not null,
+  serial_number text not null,baseline_ttsn real not null,baseline_csn real not null,
+  baseline_starts integer not null,baseline_flights integer not null,cycle_basis text not null default 'flights',
+  tracking_start_date text not null,source_reference text,status text not null default 'Active',
+  created_at text not null,archived_at text
+);
+create table if not exists engine_components(
+  id text primary key,engine_id text not null,description text not null,part_number text not null,
+  serial_number text not null,max_cycles real not null,baseline_component_cycles real not null,
+  baseline_engine_starts integer not null,baseline_engine_flights integer not null,
+  acf real,fcf real,warning_cycles real not null default 250,source_reference text not null,
+  source_verified integer not null default 0,installation_date text not null,maintenance_record text,
+  removed_at text,removed_details text,created_at text not null,archived_at text
+);
+create table if not exists flight_engine_operations(
+  id text primary key,flight_record_id text not null,engine_id text not null,
+  starts integer not null,flights integer not null,created_at text not null,
+  unique(flight_record_id,engine_id)
+);`);
 db.exec(
   `create table if not exists notification_reads(notification_id text not null,user_id text not null,read_at text not null,primary key(notification_id,user_id),foreign key(notification_id) references notifications(id) on delete cascade,foreign key(user_id) references users(id) on delete cascade);`,
 );
@@ -282,6 +302,8 @@ const tables = new Set([
   "schedules",
   "timeoff",
   "maintenance",
+  "engines",
+  "engine_components",
   "squawks",
   "flight_records",
   "documents",
@@ -299,6 +321,8 @@ const permissions = {
   schedules: ["administrator", "chief_pilot", "drop_zone_manager", "maintenance"],
   timeoff: ["administrator", "chief_pilot", "pilot"],
   maintenance: ["administrator", "maintenance"],
+  engines: ["administrator", "maintenance"],
+  engine_components: ["administrator", "maintenance"],
   squawks: ["administrator", "maintenance", "pilot"],
   flight_records: ["administrator", "chief_pilot", "pilot"],
   documents: ["administrator", "chief_pilot", "maintenance", "pilot"],
@@ -524,6 +548,91 @@ export function handler(req, res) {
           )
           .get(p.id),
       }));
+      state.flight_records = state.flight_records.map((record) => ({
+        ...record,
+        engine_operations: db
+          .prepare(
+            "select engine_id,starts,flights from flight_engine_operations where flight_record_id=? order by engine_id",
+          )
+          .all(record.id),
+      }));
+      state.engines = state.engines.map((engine) => {
+        const activity = db
+          .prepare(
+            `select coalesce(sum(o.starts),0) starts,coalesce(sum(o.flights),0) flights,
+             coalesce(sum(f.total_time),0) hours
+             from flight_engine_operations o
+             join flight_records f on f.id=o.flight_record_id
+             where o.engine_id=? and f.archived_at is null and f.flight_date>=?`,
+          )
+          .get(engine.id, engine.tracking_start_date),
+          starts = Number(engine.baseline_starts) + Number(activity.starts),
+          flights = Number(engine.baseline_flights) + Number(activity.flights),
+          csnDelta = engine.cycle_basis === "starts"
+            ? Number(activity.starts)
+            : Number(activity.flights);
+        return {
+          ...engine,
+          current_ttsn: Number(engine.baseline_ttsn) + Number(activity.hours),
+          current_csn: Number(engine.baseline_csn) + csnDelta,
+          total_starts: starts,
+          total_flights: flights,
+          tracked_hours: Number(activity.hours),
+        };
+      });
+      const engineById = new Map(state.engines.map((engine) => [engine.id, engine]));
+      state.engine_components = state.engine_components.map((component) => {
+        const engine = engineById.get(component.engine_id),
+          factorsComplete = component.acf != null && component.fcf != null,
+          startsDelta = Math.max(
+            0,
+            Number(engine?.total_starts || 0) - Number(component.baseline_engine_starts),
+          ),
+          flightsDelta = Math.max(
+            0,
+            Number(engine?.total_flights || 0) - Number(component.baseline_engine_flights),
+          ),
+          currentCycles = factorsComplete
+            ? Number(component.baseline_component_cycles) +
+              startsDelta * Number(component.acf) +
+              flightsDelta * Number(component.fcf)
+            : null,
+          remainingCycles = currentCycles == null
+            ? null
+            : Number(component.max_cycles) - currentCycles,
+          percentRemaining = remainingCycles == null || !Number(component.max_cycles)
+            ? null
+            : Math.max(0, (remainingCycles / Number(component.max_cycles)) * 100),
+          verified = Boolean(
+            component.source_verified &&
+              component.source_reference &&
+              factorsComplete &&
+              Number(component.max_cycles) > 0,
+          );
+        return {
+          ...component,
+          starts_since_baseline: startsDelta,
+          flights_since_baseline: flightsDelta,
+          current_cycles: currentCycles,
+          remaining_cycles: remainingCycles,
+          percent_remaining: percentRemaining,
+          verification_status: verified ? "Verified" : "Unverified — review required",
+          life_status: !verified || remainingCycles == null
+            ? "Unverified"
+            : remainingCycles <= 0
+              ? "Limit reached"
+              : remainingCycles <= Number(component.warning_cycles)
+                ? "Approaching limit"
+                : "Normal",
+        };
+      });
+      state.engine_component_history = ["administrator", "maintenance"].includes(role)
+        ? db
+            .prepare(
+              "select * from engine_components where archived_at is not null order by archived_at desc",
+            )
+            .all()
+        : [];
       const aircraftById = new Map(state.aircraft.map((a) => [a.id, a]));
       state.maintenance = state.maintenance.map((item) => {
         const aircraft = aircraftById.get(item.aircraft_id),
@@ -664,6 +773,9 @@ export function handler(req, res) {
         }));
         for (const restricted of [
           "maintenance",
+          "engines",
+          "engine_components",
+          "engine_component_history",
           "squawks",
           "documents",
           "audit_logs",
@@ -685,6 +797,60 @@ export function handler(req, res) {
       return json(res, 403, {
         error: `${role} is not authorized for this action`,
       });
+    if (
+      resource === "engine_components" &&
+      req.method === "POST" &&
+      parts[2] &&
+      parts[3] === "replace"
+    ) {
+      const old = db
+        .prepare("select * from engine_components where id=? and archived_at is null")
+        .get(parts[2]);
+      if (!old) return json(res, 404, { error: "Active component not found" });
+      const d = await body(req);
+      required(d, [
+        "part_number",
+        "serial_number",
+        "max_cycles",
+        "baseline_component_cycles",
+        "baseline_engine_starts",
+        "baseline_engine_flights",
+        "source_reference",
+        "installation_date",
+        "removed_at",
+        "removed_details",
+      ]);
+      if (d.acf == null || d.fcf == null)
+        throw Error("Enter both ACF and FCF; use 0 when a factor is not applicable");
+      const id = randomUUID(), timestamp = now();
+      db.exec("begin immediate");
+      try {
+        db.prepare(
+          "update engine_components set removed_at=?,removed_details=?,archived_at=? where id=?",
+        ).run(d.removed_at, d.removed_details, timestamp, old.id);
+        db.prepare(
+          `insert into engine_components(
+            id,engine_id,description,part_number,serial_number,max_cycles,
+            baseline_component_cycles,baseline_engine_starts,baseline_engine_flights,
+            acf,fcf,warning_cycles,source_reference,source_verified,
+            installation_date,maintenance_record,created_at
+          ) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ).run(
+          id, old.engine_id, d.description || old.description, d.part_number,
+          d.serial_number, Number(d.max_cycles), Number(d.baseline_component_cycles),
+          Number(d.baseline_engine_starts), Number(d.baseline_engine_flights),
+          Number(d.acf), Number(d.fcf), Number(d.warning_cycles || 250),
+          d.source_reference, d.source_verified ? 1 : 0, d.installation_date,
+          d.maintenance_record || "", timestamp,
+        );
+        audit("replace", "engine_component", old.id, old, { id, ...d }, role);
+        db.exec("commit");
+      } catch (error) {
+        db.exec("rollback");
+        throw error;
+      }
+      return json(res, 201, { id, engine_id: old.engine_id, ...d });
+    }
     if (
       resource === "timeoff" &&
       req.method === "POST" &&
@@ -767,6 +933,21 @@ export function handler(req, res) {
       ]);
       if (+d.end_time < +d.start_time)
         throw Error("Ending time must be greater than starting time");
+      const duplicate = db
+        .prepare(
+          `select id from flight_records where archived_at is null and aircraft_id=?
+           and pilot_id=? and flight_date=? and start_time=? and end_time=? and loads=?`,
+        )
+        .get(
+          d.aircraft_id,
+          d.pilot_id,
+          d.flight_date,
+          Number(d.start_time),
+          Number(d.end_time),
+          Number(d.loads),
+        );
+      if (duplicate)
+        throw Error("This flight entry already exists and was not added again");
       const ac = db
         .prepare("select * from aircraft where id=?")
         .get(d.aircraft_id);
@@ -817,6 +998,12 @@ export function handler(req, res) {
           d.oil || null,
           d.notes || "",
           now(),
+        );
+        replaceEngineOperations(
+          id,
+          d.aircraft_id,
+          d.engine_operations,
+          true,
         );
         db.prepare(
           `update aircraft set dz=?,time=?,hobbs=?,cycles=coalesce(?,cycles),
@@ -953,6 +1140,13 @@ export function handler(req, res) {
           updated.notes,
           old.id,
         );
+        if (d.engine_operations !== undefined || aircraftId !== old.aircraft_id)
+          replaceEngineOperations(
+            old.id,
+            aircraftId,
+            d.engine_operations || [],
+            true,
+          );
         if (aircraftId === old.aircraft_id) {
           updateAircraftTotals(
             old.aircraft_id,
@@ -1067,6 +1261,17 @@ export function handler(req, res) {
         d.created_at = d.created_at || now();
         d.status = d.status || "Open";
       }
+      if (resource === "engines") {
+        d.created_at = d.created_at || now();
+        d.status = d.status || "Active";
+        d.cycle_basis = d.cycle_basis === "starts" ? "starts" : "flights";
+      }
+      if (resource === "engine_components") {
+        d.created_at = d.created_at || now();
+        d.source_verified = d.source_verified ? 1 : 0;
+        if (d.acf == null || d.fcf == null)
+          throw Error("Enter both ACF and FCF; use 0 when a factor is not applicable");
+      }
       validate(resource, d);
       if (resource === "schedules") validateSchedule(d);
       const id = randomUUID(),
@@ -1092,8 +1297,17 @@ export function handler(req, res) {
         .prepare(`select * from ${resource} where id=?`)
         .get(parts[2]);
       if (!old) return json(res, 404, { error: "Record not found" });
-      const d = await body(req),
-        cols = Object.keys(d);
+      const d = await body(req);
+      if (resource === "engine_components") {
+        if (Object.hasOwn(d, "source_verified"))
+          d.source_verified = d.source_verified ? 1 : 0;
+        const merged = { ...old, ...d };
+        validate(resource, merged);
+        if (merged.acf == null || merged.fcf == null)
+          throw Error("Enter both ACF and FCF; use 0 when a factor is not applicable");
+      }
+      if (resource === "engines") validate(resource, { ...old, ...d });
+      const cols = Object.keys(d);
       if (resource === "schedules" && role === "maintenance" &&
           (old.kind !== "maintenance" || (d.kind && d.kind !== "maintenance")))
         return json(res, 403, { error: "Maintenance may only edit aircraft maintenance" });
@@ -1137,6 +1351,54 @@ function required(d, ks) {
   for (const k of ks)
     if (d[k] === undefined || d[k] === null || d[k] === "")
       throw Error(`${k.replaceAll("_", " ")} is required`);
+}
+function replaceEngineOperations(
+  flightRecordId,
+  aircraftId,
+  operations,
+  requireWhenConfigured = false,
+) {
+  const configured = db
+    .prepare(
+      "select id from engines where aircraft_id=? and status='Active' and archived_at is null order by position",
+    )
+    .all(aircraftId);
+  if (operations == null) {
+    if (requireWhenConfigured && configured.length)
+      throw Error("Enter engine starts and flights for each operating engine");
+    return;
+  }
+  if (!Array.isArray(operations)) throw Error("Engine operations are invalid");
+  const allowed = new Set(configured.map((engine) => engine.id));
+  const seen = new Set();
+  for (const operation of operations) {
+    if (!allowed.has(operation.engine_id))
+      throw Error("An engine operation does not belong to the selected aircraft");
+    if (seen.has(operation.engine_id)) throw Error("Each engine can only be entered once");
+    seen.add(operation.engine_id);
+    const starts = Number(operation.starts), flights = Number(operation.flights);
+    if (!Number.isInteger(starts) || starts < 0)
+      throw Error("Engine starts must be a whole number of zero or more");
+    if (!Number.isInteger(flights) || flights < 0)
+      throw Error("Engine flights must be a whole number of zero or more");
+  }
+  if (requireWhenConfigured && configured.length && !operations.length)
+    throw Error("Select the engines that operated");
+  db.prepare("delete from flight_engine_operations where flight_record_id=?").run(
+    flightRecordId,
+  );
+  const insert = db.prepare(
+    "insert into flight_engine_operations(id,flight_record_id,engine_id,starts,flights,created_at) values(?,?,?,?,?,?)",
+  );
+  for (const operation of operations)
+    insert.run(
+      randomUUID(),
+      flightRecordId,
+      operation.engine_id,
+      Number(operation.starts),
+      Number(operation.flights),
+      now(),
+    );
 }
 function updateAircraftTotals(id, timeDelta, cycleDelta) {
   db.prepare(
@@ -1204,6 +1466,32 @@ function validate(r, d) {
       "remaining",
       "warning",
       "status",
+    ],
+    engines: [
+      "aircraft_id",
+      "position",
+      "model",
+      "serial_number",
+      "baseline_ttsn",
+      "baseline_csn",
+      "baseline_starts",
+      "baseline_flights",
+      "tracking_start_date",
+    ],
+    engine_components: [
+      "engine_id",
+      "description",
+      "part_number",
+      "serial_number",
+      "max_cycles",
+      "baseline_component_cycles",
+      "baseline_engine_starts",
+      "baseline_engine_flights",
+      "acf",
+      "fcf",
+      "warning_cycles",
+      "source_reference",
+      "installation_date",
     ],
     squawks: ["aircraft_id", "pilot_id", "dz", "description", "severity"],
     documents: [

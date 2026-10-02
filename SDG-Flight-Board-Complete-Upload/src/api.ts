@@ -58,6 +58,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(d),
     }),
+  replaceEngineComponent: (id: string, d: any) =>
+    request(`/engine_components/${id}/replace`, {
+      method: "POST",
+      body: JSON.stringify(d),
+    }),
   createTimeOff: (d: any) =>
     request("/timeoff", {
       method: "POST",

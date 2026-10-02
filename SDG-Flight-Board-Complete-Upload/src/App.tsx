@@ -146,6 +146,9 @@ export function App() {
     | "timeoff"
     | "assignment"
     | "maintenance"
+    | "engine"
+    | "engineComponent"
+    | "replaceEngineComponent"
     | "loadsheet"
     | "account"
     | null
@@ -428,6 +431,9 @@ export function App() {
             <Maintenance
               aircraft={selectedAircraft}
               items={state.maintenance || []}
+              engines={state.engines || []}
+              engineComponents={state.engine_components || []}
+              componentHistory={state.engine_component_history || []}
               back={() => {
                 setSelectedAircraft(null);
                 setPage("aircraft");
@@ -435,6 +441,18 @@ export function App() {
               action={(item: any) => {
                 setEditing(item);
                 setModal("maintenance");
+              }}
+              engineAction={(engine: any) => {
+                setEditing(engine || null);
+                setModal("engine");
+              }}
+              componentAction={(component: any, engine: any) => {
+                setEditing({ ...(component || {}), _engine: engine });
+                setModal("engineComponent");
+              }}
+              replaceComponent={(component: any, engine: any) => {
+                setEditing({ ...component, _engine: engine });
+                setModal("replaceEngineComponent");
               }}
               update={(id: string, d: any, msg: string) =>
                 submit(() => api.update("aircraft", id, d), msg)
@@ -566,6 +584,7 @@ export function App() {
             setEditing(null);
           }}
           aircraft={state.aircraft || []}
+          engines={state.engines || []}
           remove={
             editing?.id
               ? () =>
@@ -745,6 +764,48 @@ export function App() {
                   )
               : undefined
           }
+        />
+      )}{" "}
+      {modal === "engine" && (
+        <EngineModal
+          value={editing}
+          aircraft={selectedAircraft}
+          close={() => { setModal(null); setEditing(null); }}
+          save={(d) => submit(
+            () => editing?.id ? api.update("engines", editing.id, d) : api.create("engines", d),
+            editing?.id ? "Engine configuration updated" : "Engine configuration added",
+          )}
+          remove={editing?.id ? () => submit(
+            () => api.archive("engines", editing.id),
+            "Engine configuration archived",
+          ) : undefined}
+        />
+      )}{" "}
+      {modal === "engineComponent" && (
+        <EngineComponentModal
+          value={editing?.id ? editing : null}
+          engine={editing?._engine}
+          close={() => { setModal(null); setEditing(null); }}
+          save={(d) => submit(
+            () => editing?.id ? api.update("engine_components", editing.id, d) : api.create("engine_components", d),
+            editing?.id ? "Life-limited component updated" : "Life-limited component added",
+          )}
+          remove={editing?.id ? () => submit(
+            () => api.archive("engine_components", editing.id),
+            "Component archived",
+          ) : undefined}
+        />
+      )}{" "}
+      {modal === "replaceEngineComponent" && (
+        <EngineComponentModal
+          value={editing}
+          engine={editing?._engine}
+          replacement
+          close={() => { setModal(null); setEditing(null); }}
+          save={(d) => submit(
+            () => api.replaceEngineComponent(editing.id, d),
+            "Component replaced and removed component archived",
+          )}
         />
       )}{" "}
       {toast && (
@@ -1476,15 +1537,27 @@ function Pilots({ items, open }: { items: any[]; open: (p?: any) => void }) {
 function Maintenance({
   aircraft: ac,
   items,
+  engines,
+  engineComponents,
+  componentHistory,
   back,
   action,
+  engineAction,
+  componentAction,
+  replaceComponent,
   update,
   remove,
 }: {
   aircraft: any;
   items: any[];
+  engines: any[];
+  engineComponents: any[];
+  componentHistory: any[];
   back: () => void;
   action: (x: any) => void;
+  engineAction: (x?: any) => void;
+  componentAction: (component: any, engine: any) => void;
+  replaceComponent: (component: any, engine: any) => void;
   update: (id: string, d: any, msg: string) => void;
   remove: (id: string) => void;
 }) {
@@ -1508,6 +1581,13 @@ function Maintenance({
       </>
     );
   const own = items.filter((x) => x.aircraft_id === ac.id);
+  const aircraftEngines = engines.filter((engine) => engine.aircraft_id === ac.id);
+  const aircraftEngineIds = new Set(aircraftEngines.map((engine) => engine.id));
+  const lifeComponents = engineComponents.filter((component) => aircraftEngineIds.has(component.engine_id));
+  const lifeHistory = componentHistory.filter((component) => aircraftEngineIds.has(component.engine_id));
+  const limitingComponent = [...lifeComponents]
+    .filter((component) => component.remaining_cycles != null)
+    .sort((a, b) => Number(a.remaining_cycles) - Number(b.remaining_cycles))[0];
   const inspectionTemplates = Array.from(
     new Map(items.map((item) => [String(item.item).toLowerCase(), item])).values(),
   );
@@ -1677,6 +1757,85 @@ function Maintenance({
           </>}
           <button className="primary">Save tracking totals</button>
         </form>
+      </Section>
+      <Section
+        title="Engine life limits"
+        action={<button className="primary compact-action" onClick={() => engineAction()}><Plus /> Add engine</button>}
+      >
+        <div className="life-limit-disclaimer">
+          <TriangleAlert />
+          <span>
+            <b>Maintenance tracking support only</b>
+            <small>Reconcile every calculated value with current Pratt & Whitney documentation and approved aircraft maintenance records before making airworthiness decisions.</small>
+          </span>
+        </div>
+        {limitingComponent && (
+          <div className={`limiting-component ${limitingComponent.life_status === "Limit reached" ? "danger" : limitingComponent.life_status === "Approaching limit" ? "warning" : "success"}`}>
+            <small>LIMITING COMPONENT</small>
+            <b>{limitingComponent.description}</b>
+            <span>{Number(limitingComponent.remaining_cycles).toFixed(1)} cycles remaining</span>
+          </div>
+        )}
+        <div className="engine-life-list">
+          {aircraftEngines.map((engine) => {
+            const components = lifeComponents.filter((component) => component.engine_id === engine.id);
+            return (
+              <article className="engine-life-card" key={engine.id}>
+                <header>
+                  <div>
+                    <small>{engine.position}</small>
+                    <h3>{engine.model} · S/N {engine.serial_number}</h3>
+                    <p>Tracking since {engine.tracking_start_date}</p>
+                  </div>
+                  <button className="ghost" onClick={() => engineAction(engine)}>Edit engine</button>
+                  <button className="primary" onClick={() => componentAction(null, engine)}><Plus /> Add component</button>
+                </header>
+                <div className="engine-totals">
+                  <span><small>TTSN</small><b>{Number(engine.current_ttsn).toFixed(1)}</b></span>
+                  <span><small>CSN</small><b>{Number(engine.current_csn).toFixed(1)}</b></span>
+                  <span><small>ENGINE STARTS</small><b>{Number(engine.total_starts).toLocaleString()}</b></span>
+                  <span><small>FLIGHTS</small><b>{Number(engine.total_flights).toLocaleString()}</b></span>
+                </div>
+                <div className="life-component-table">
+                  <div className="life-table-head"><span>Component</span><span>Current</span><span>Maximum</span><span>Remaining</span><span>Source</span><span /></div>
+                  {components.map((component) => (
+                    <div key={component.id} className="life-component-row">
+                      <span>
+                        <i className={`dot ${component.life_status === "Limit reached" ? "danger" : component.life_status === "Approaching limit" || component.life_status === "Unverified" ? "warning" : "success"}`} />
+                        <b>{component.description}</b>
+                        <small>P/N {component.part_number} · S/N {component.serial_number}</small>
+                      </span>
+                      <b>{component.current_cycles == null ? "Review" : Number(component.current_cycles).toFixed(1)}</b>
+                      <b>{Number(component.max_cycles).toFixed(1)}</b>
+                      <span className="life-remaining">
+                        <b>{component.remaining_cycles == null ? "—" : Number(component.remaining_cycles).toFixed(1)}</b>
+                        <small>{component.percent_remaining == null ? "Not verified" : `${Number(component.percent_remaining).toFixed(1)}% life remaining`}</small>
+                      </span>
+                      <small className={component.verification_status === "Verified" ? "verified" : "unverified"}>{component.verification_status}</small>
+                      <span className="life-actions">
+                        <button className="ghost" onClick={() => componentAction(component, engine)}>Edit</button>
+                        <button className="ghost" onClick={() => replaceComponent(component, engine)}>Replace</button>
+                      </span>
+                    </div>
+                  ))}
+                  {!components.length && <div className="empty-mini"><Wrench /><b>No life-limited components configured</b><p>Add only values supported by current approved documentation.</p></div>}
+                </div>
+              </article>
+            );
+          })}
+          {!aircraftEngines.length && <div className="empty-mini"><CircleGauge /><b>No engines configured</b><p>Add each installed engine separately to begin life-limit tracking.</p></div>}
+        </div>
+        {lifeHistory.length > 0 && (
+          <details className="component-history">
+            <summary>Removed component history ({lifeHistory.length})</summary>
+            {lifeHistory.map((component) => (
+              <div key={component.id}>
+                <b>{component.description} · S/N {component.serial_number}</b>
+                <small>Removed {component.removed_at || component.archived_at} · {component.removed_details || "Archived"}</small>
+              </div>
+            ))}
+          </details>
+        )}
       </Section>
       <Section title="Maintenance items">
         <div className="maintenance-list">
@@ -2499,12 +2658,14 @@ function DayModal({
   close,
   submit,
   aircraft: acs,
+  engines,
   remove,
 }: {
   value?: any;
   close: () => void;
   submit: (d: any) => void;
   aircraft: any[];
+  engines: any[];
   remove?: () => void;
 }) {
   const [aircraftId, setAircraftId] = useState(value?.aircraft_id || ""),
@@ -2515,6 +2676,7 @@ function DayModal({
     [squawk, setSquawk] = useState(false),
     [confirmingDelete, setConfirmingDelete] = useState(false);
   const ac = acs.find((a) => a.id === aircraftId),
+    availableEngines = engines.filter((engine) => engine.aircraft_id === aircraftId && engine.status === "Active"),
     start = startTime,
     total = end ? Math.max(0, Number(end) - start).toFixed(1) : "0.0",
     counterDelta = Number(total) - Number(value?.total_time || 0),
@@ -2547,7 +2709,14 @@ function DayModal({
         onSubmit={(e) => {
           e.preventDefault();
           const f = Object.fromEntries(new FormData(e.currentTarget)),
-            cycles = Number(f.cycles);
+            cycles = Number(f.cycles),
+            engineOperations = availableEngines
+              .filter((engine) => f[`engine_${engine.id}_operated`] === "on")
+              .map((engine) => ({
+                engine_id: engine.id,
+                starts: Number(f[`engine_${engine.id}_starts`] || 0),
+                flights: Number(f[`engine_${engine.id}_flights`] || 0),
+              }));
           submit({
             ...f,
             aircraft_id: aircraftId,
@@ -2557,6 +2726,7 @@ function DayModal({
             start_time: start,
             start_cycles: startCycles,
             end_cycles: startCycles + cycles,
+            engine_operations: engineOperations,
             squawk_description: squawk ? f.squawk_description : null,
             squawk_severity: squawk ? "Information" : null,
           });
@@ -2663,6 +2833,28 @@ function DayModal({
               inputMode="numeric"
             />
           </Field>
+          {availableEngines.length > 0 && (
+            <div className="engine-closeout wide">
+              <div className="engine-closeout-heading">
+                <CircleGauge />
+                <span><b>ENGINE OPERATIONS</b><small>Record starts separately from flights/loads.</small></span>
+              </div>
+              {availableEngines.map((engine) => {
+                const existing = (value?.engine_operations || []).find((operation: any) => operation.engine_id === engine.id);
+                const defaultOperated = Boolean(existing) || (!value?.id && availableEngines.length === 1);
+                return (
+                  <div className="engine-closeout-row" key={engine.id}>
+                    <label className="engine-operated">
+                      <input name={`engine_${engine.id}_operated`} type="checkbox" defaultChecked={defaultOperated} />
+                      <span><b>{engine.position}</b><small>{engine.model} · {engine.serial_number}</small></span>
+                    </label>
+                    <Field label="ENGINE STARTS"><input name={`engine_${engine.id}_starts`} type="number" min="0" step="1" defaultValue={existing?.starts ?? (defaultOperated ? 1 : 0)} /></Field>
+                    <Field label="FLIGHTS COMPLETED"><input name={`engine_${engine.id}_flights`} type="number" min="0" step="1" defaultValue={existing?.flights ?? value?.loads ?? ""} /></Field>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <Field label="NOTES" wide>
             <textarea
               name="notes"
@@ -3443,6 +3635,149 @@ function AssignmentModal({
     </ModalShell>
   );
 }
+function EngineModal({
+  value,
+  aircraft,
+  close,
+  save,
+  remove,
+}: {
+  value?: any;
+  aircraft: any;
+  close: () => void;
+  save: (d: any) => void;
+  remove?: () => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  return (
+    <ModalShell
+      title={value?.id ? "Edit engine configuration" : `Add engine · ${aircraft?.tail}`}
+      desc="Baseline readings anchor all automatic engine and life-limited component calculations."
+      close={close}
+    >
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        const form = Object.fromEntries(new FormData(event.currentTarget));
+        save({
+          aircraft_id: aircraft.id,
+          position: String(form.position),
+          model: String(form.model),
+          serial_number: String(form.serial_number),
+          baseline_ttsn: Number(form.baseline_ttsn),
+          baseline_csn: Number(form.baseline_csn),
+          baseline_starts: Number(form.baseline_starts),
+          baseline_flights: Number(form.baseline_flights),
+          cycle_basis: String(form.cycle_basis),
+          tracking_start_date: String(form.tracking_start_date),
+          source_reference: String(form.source_reference || ""),
+          status: "Active",
+        });
+      }}>
+        <div className="form-grid">
+          <Field label="ENGINE POSITION"><input name="position" required defaultValue={value?.position || (aircraft?.type === "Twin Otter" ? "Engine 1" : "Engine")} /></Field>
+          <Field label="ENGINE MODEL"><input name="model" required defaultValue={value?.model || ""} placeholder="PT6A-34" /></Field>
+          <Field label="ENGINE SERIAL NUMBER"><input name="serial_number" required defaultValue={value?.serial_number || ""} /></Field>
+          <Field label="TRACKING START DATE"><input name="tracking_start_date" type="date" required defaultValue={value?.tracking_start_date || localDate()} /></Field>
+          <Field label="TTSN AT BASELINE"><input name="baseline_ttsn" type="number" min="0" step=".1" required defaultValue={value?.baseline_ttsn ?? ""} /></Field>
+          <Field label="CSN AT BASELINE"><input name="baseline_csn" type="number" min="0" step=".1" required defaultValue={value?.baseline_csn ?? ""} /></Field>
+          <Field label="TOTAL STARTS AT BASELINE"><input name="baseline_starts" type="number" min="0" step="1" required defaultValue={value?.baseline_starts ?? ""} /></Field>
+          <Field label="TOTAL FLIGHTS AT BASELINE"><input name="baseline_flights" type="number" min="0" step="1" required defaultValue={value?.baseline_flights ?? ""} /></Field>
+          <Field label="ENGINE CSN ACCUMULATES BY">
+            <select name="cycle_basis" defaultValue={value?.cycle_basis || "flights"}>
+              <option value="flights">Flights</option>
+              <option value="starts">Engine starts</option>
+            </select>
+          </Field>
+          <Field label="BASELINE SOURCE / RECORD REFERENCE" wide><textarea name="source_reference" defaultValue={value?.source_reference || ""} placeholder="Logbook entry, work order, or approved record reference" /></Field>
+        </div>
+        <div className="modal-actions">
+          {remove && (!confirmingDelete ? <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Archive engine</button> : <><span className="delete-confirm">Archive this engine configuration?</span><button type="button" className="danger-action" onClick={remove}>Yes, archive</button></>)}
+          <button type="button" className="ghost" onClick={close}>Cancel</button>
+          <button className="primary">Save engine</button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function EngineComponentModal({
+  value,
+  engine,
+  close,
+  save,
+  remove,
+  replacement = false,
+}: {
+  value?: any;
+  engine: any;
+  close: () => void;
+  save: (d: any) => void;
+  remove?: () => void;
+  replacement?: boolean;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  return (
+    <ModalShell
+      title={replacement ? `Replace ${value?.description}` : value?.id ? "Edit life-limited component" : `Add component · ${engine?.position}`}
+      desc="Use only values and factors supported by current approved maintenance documentation. Enter 0 when an ACF or FCF is documented as not applicable."
+      close={close}
+    >
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        save({
+          engine_id: engine.id,
+          description: String(form.get("description")),
+          part_number: String(form.get("part_number")),
+          serial_number: String(form.get("serial_number")),
+          max_cycles: Number(form.get("max_cycles")),
+          baseline_component_cycles: Number(form.get("baseline_component_cycles")),
+          baseline_engine_starts: Number(form.get("baseline_engine_starts")),
+          baseline_engine_flights: Number(form.get("baseline_engine_flights")),
+          acf: Number(form.get("acf")),
+          fcf: Number(form.get("fcf")),
+          warning_cycles: Number(form.get("warning_cycles")),
+          source_reference: String(form.get("source_reference")),
+          source_verified: form.get("source_verified") === "on",
+          installation_date: String(form.get("installation_date")),
+          maintenance_record: String(form.get("maintenance_record") || ""),
+          ...(replacement ? {
+            removed_at: String(form.get("removed_at")),
+            removed_details: String(form.get("removed_details")),
+          } : {}),
+        });
+      }}>
+        <div className="form-grid">
+          {replacement && <>
+            <div className="both-note wide"><Wrench /><span><b>Removed component</b><small>{value?.part_number} · S/N {value?.serial_number} · {value?.current_cycles == null ? "cycles require review" : `${Number(value.current_cycles).toFixed(1)} calculated cycles`}</small></span></div>
+            <Field label="REMOVAL DATE"><input name="removed_at" type="date" required defaultValue={localDate()} /></Field>
+            <Field label="REMOVAL RECORD / DETAILS"><input name="removed_details" required placeholder="Work order and disposition" /></Field>
+          </>}
+          <Field label="COMPONENT DESCRIPTION"><input name="description" required defaultValue={value?.description || ""} placeholder="Compressor disk" /></Field>
+          <Field label="PART NUMBER"><input name="part_number" required defaultValue={replacement ? "" : value?.part_number || ""} /></Field>
+          <Field label="SERIAL NUMBER"><input name="serial_number" required defaultValue={replacement ? "" : value?.serial_number || ""} /></Field>
+          <Field label="APPROVED MAXIMUM LIFE CYCLES"><input name="max_cycles" type="number" min="0.1" step=".1" required defaultValue={replacement ? "" : value?.max_cycles ?? ""} /></Field>
+          <Field label="DOCUMENTED COMPONENT CYCLES AT BASELINE"><input name="baseline_component_cycles" type="number" min="0" step=".1" required defaultValue={replacement ? "" : value?.baseline_component_cycles ?? ""} /></Field>
+          <Field label="ENGINE STARTS AT BASELINE"><input name="baseline_engine_starts" type="number" min="0" step="1" required defaultValue={replacement ? engine?.total_starts ?? "" : value?.baseline_engine_starts ?? engine?.total_starts ?? ""} /></Field>
+          <Field label="ENGINE FLIGHTS AT BASELINE"><input name="baseline_engine_flights" type="number" min="0" step="1" required defaultValue={replacement ? engine?.total_flights ?? "" : value?.baseline_engine_flights ?? engine?.total_flights ?? ""} /></Field>
+          <Field label="ABBREVIATED CYCLE FACTOR (ACF)"><input name="acf" type="number" min="0" step=".0001" required defaultValue={replacement ? "" : value?.acf ?? ""} /></Field>
+          <Field label="FLIGHT COUNT FACTOR (FCF)"><input name="fcf" type="number" min="0" step=".0001" required defaultValue={replacement ? "" : value?.fcf ?? ""} /></Field>
+          <Field label="ADVANCE WARNING — REMAINING CYCLES"><input name="warning_cycles" type="number" min="0" step="1" required defaultValue={replacement ? value?.warning_cycles ?? 250 : value?.warning_cycles ?? 250} /></Field>
+          <Field label="INSTALLATION / TRACKING BASELINE DATE"><input name="installation_date" type="date" required defaultValue={replacement ? localDate() : value?.installation_date || localDate()} /></Field>
+          <Field label="APPROVED MANUAL / SERVICE BULLETIN REFERENCE" wide><textarea name="source_reference" required defaultValue={replacement ? "" : value?.source_reference || ""} placeholder="Manual chapter/revision, service bulletin, or other approved source" /></Field>
+          <Field label="SUPPORTING MAINTENANCE RECORD" wide><textarea name="maintenance_record" defaultValue={replacement ? "" : value?.maintenance_record || ""} placeholder="Work order, logbook entry, or document reference" /></Field>
+          <label className="account-active wide"><input name="source_verified" type="checkbox" defaultChecked={!replacement && Boolean(value?.source_verified)} /><span><b>Source values verified</b><small>Confirm the life limit and factors were reconciled to current approved documentation.</small></span></label>
+        </div>
+        <div className="modal-actions">
+          {remove && (!confirmingDelete ? <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Archive component</button> : <button type="button" className="danger-action" onClick={remove}>Yes, archive</button>)}
+          <button type="button" className="ghost" onClick={close}>Cancel</button>
+          <button className="primary">{replacement ? "Archive old and install replacement" : "Save component"}</button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
 function MaintenanceModal({
   value,
   aircraft,
