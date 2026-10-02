@@ -661,6 +661,24 @@ export function handler(req, res) {
           d.end_cycles == null ? null : +d.end_cycles - (+d.start_cycles || 0);
       db.exec("begin immediate");
       try {
+        const currentAircraft = db
+          .prepare("select * from aircraft where id=? and archived_at is null")
+          .get(d.aircraft_id);
+        if (!currentAircraft) throw Error("Aircraft not found");
+        const currentHobbs = Number(
+          currentAircraft.hobbs ?? currentAircraft.time ?? 0,
+        );
+        const currentCycles = Number(
+          currentAircraft.tcsn ?? currentAircraft.cycles ?? 0,
+        );
+        if (
+          Math.abs(Number(d.start_time) - currentHobbs) > 0.001 ||
+          (d.start_cycles != null &&
+            Number(d.start_cycles) !== currentCycles)
+        )
+          throw Error(
+            "This aircraft was updated by another pilot. Close and reopen this entry to use the latest Hobbs, cycles, and location.",
+          );
         db.prepare(
           `insert into flight_records(
             id,aircraft_id,pilot_id,dz,flight_date,start_time,end_time,total_time,
@@ -685,7 +703,7 @@ export function handler(req, res) {
           now(),
         );
         db.prepare(
-          `update aircraft set time=?,hobbs=?,cycles=coalesce(?,cycles),
+          `update aircraft set dz=?,time=?,hobbs=?,cycles=coalesce(?,cycles),
            ttsn=coalesce(ttsn,time)+?,tcsn=coalesce(tcsn,cycles)+?,
            engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
            engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
@@ -699,7 +717,7 @@ export function handler(req, res) {
            engine2_tcsn=case when engine2_tcsn is null then null else engine2_tcsn+? end
            where id=?`,
         ).run(
-          +d.end_time, +d.end_time, d.end_cycles ?? null,
+          d.dz, +d.end_time, +d.end_time, d.end_cycles ?? null,
           total, tc || 0, total, total, tc || 0, total, tc || 0,
           total, total, tc || 0, total, tc || 0,
           d.aircraft_id,

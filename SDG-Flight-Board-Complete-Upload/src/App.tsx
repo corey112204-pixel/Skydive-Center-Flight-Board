@@ -163,7 +163,7 @@ export function App() {
   const activeSquawks = (state.squawks || []).filter(
     (x) => x.status !== "Closed",
   ).length;
-  const refresh = () =>
+  const refresh = (silent = false) =>
     api
       .state()
       .then((data) => {
@@ -171,13 +171,25 @@ export function App() {
         setAuthenticated(true);
       })
       .catch((e) => {
-        setError(e.message);
+        if (!silent) setError(e.message);
         if (!localStorage.getItem("sdg_session")) setAuthenticated(false);
       })
       .finally(() => setLoading(false));
   useEffect(() => {
     void refresh();
   }, []);
+  useEffect(() => {
+    if (!authenticated) return;
+    const sync = () => {
+      if (document.visibilityState === "visible") void refresh(true);
+    };
+    const timer = window.setInterval(sync, 3000);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [authenticated]);
   useEffect(() => {
     if (selectedAircraft) {
       const updated = (state.aircraft || []).find(
@@ -442,9 +454,19 @@ export function App() {
             />
           ) : page === "daily" ? (
             <Daily
-              open={(record) => {
-                setEditing(record || null);
-                setModal("day");
+              open={async (record) => {
+                try {
+                  const latest = await api.state();
+                  setState(latest);
+                  setEditing(
+                    record?.id
+                      ? (latest.flight_records || []).find((item: any) => item.id === record.id) || record
+                      : null,
+                  );
+                  setModal("day");
+                } catch (e: any) {
+                  setError(e.message);
+                }
               }}
               upload={() => setModal("loadsheet")}
               records={state.flight_records || []}
@@ -778,7 +800,7 @@ function Dashboard({
   state: State;
   go: (p: Page) => void;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const zones: Record<string, string> = {
     GA: "Georgia",
     AL: "Alabama",
@@ -808,6 +830,35 @@ function Dashboard({
     String((state.pilots || []).find((p) => p.id === id)?.name || "Unassigned");
   const aircraftFor = (id: string) =>
     (state.aircraft || []).find((a) => a.id === id);
+  const liveOperations = records.length
+    ? Array.from(
+        records.reduce((groups, record) => {
+          const current = groups.get(record.aircraft_id) || {
+            id: `record-${record.aircraft_id}`,
+            aircraft_id: record.aircraft_id,
+            dz: record.dz,
+            loads: 0,
+            hours: 0,
+            pilotIds: new Set<string>(),
+            latest: "",
+          };
+          current.loads += Number(record.loads || 0);
+          current.hours += Number(record.total_time || 0);
+          current.pilotIds.add(record.pilot_id);
+          if (String(record.created_at) >= current.latest) {
+            current.latest = String(record.created_at);
+            current.dz = record.dz;
+          }
+          groups.set(record.aircraft_id, current);
+          return groups;
+        }, new Map<string, any>()).values(),
+      )
+    : schedules.map((schedule) => ({
+        ...schedule,
+        loads: 0,
+        hours: 0,
+        pilotIds: new Set<string>(schedule.pilot_id ? [schedule.pilot_id] : []),
+      }));
   return (
     <>
       <div className="dash-head">
@@ -899,12 +950,10 @@ function Dashboard({
           }
         >
           <div className="operations">
-            {schedules.map((o) => {
+            {liveOperations.map((o) => {
               const ac = aircraftFor(o.aircraft_id);
-              const record = records.find(
-                (r) => r.aircraft_id === o.aircraft_id,
-              );
               const code = o.dz.slice(0, 2).toUpperCase();
+              const pilotNames = Array.from(o.pilotIds as Set<string>).map(pilotName);
               return (
                 <article key={o.id}>
                   <div className={`dz-mark dz-${code.toLowerCase()}`}>
@@ -924,28 +973,28 @@ function Dashboard({
                   </div>
                   <div className="pilot-line">
                     <div className="mini-avatar">
-                      {pilotName(o.pilot_id)
+                      {(pilotNames[0] || "Unassigned")
                         .split(" ")
                         .map((x) => x[0])
                         .join("")}
                     </div>
                     <span>
                       <small>PILOT</small>
-                      <b>{pilotName(o.pilot_id)}</b>
+                      <b>{pilotNames.join(", ") || "Unassigned"}</b>
                     </span>
                     <span>
                       <small>LOADS</small>
-                      <b>{record?.loads || 0}</b>
+                      <b>{o.loads || 0}</b>
                     </span>
                     <span>
                       <small>HOURS</small>
-                      <b>{Number(record?.total_time || 0).toFixed(1)}</b>
+                      <b>{Number(o.hours || 0).toFixed(1)}</b>
                     </span>
                   </div>
                 </article>
               );
             })}
-            {!schedules.length && (
+            {!liveOperations.length && (
               <div className="empty-mini">
                 <CalendarDays />
                 <b>No pilots scheduled today</b>
@@ -2451,6 +2500,20 @@ function DayModal({
     total = end ? Math.max(0, Number(end) - start).toFixed(1) : "0.0",
     counterDelta = Number(total) - Number(value?.total_time || 0),
     projectedTtsn = Number(ac?.ttsn ?? ac?.time ?? 0) + counterDelta;
+  useEffect(() => {
+    if (value?.id || !ac) return;
+    const latestHobbs = Number(ac.hobbs ?? ac.time ?? 0);
+    const latestCycles = Number(ac.tcsn ?? ac.cycles ?? 0);
+    if (latestHobbs !== startTime) {
+      setEnd((current) => {
+        if (!current) return String(latestHobbs);
+        const enteredDuration = Math.max(0, Number(current) - startTime);
+        return String(+(latestHobbs + enteredDuration).toFixed(1));
+      });
+      setStartTime(latestHobbs);
+    }
+    if (latestCycles !== startCycles) setStartCycles(latestCycles);
+  }, [ac?.hobbs, ac?.time, ac?.tcsn, ac?.cycles, value?.id]);
   return (
     <ModalShell
       title={value ? "Edit daily flight record" : "Enter today’s flight record"}

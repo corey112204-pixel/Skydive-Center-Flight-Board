@@ -326,6 +326,75 @@ test("daily record can atomically create a squawk", async () => {
     db.prepare("select id from squawks where description=?").get(description),
   );
 });
+test("sequential pilot records stay separate and use the latest aircraft location and totals", async () => {
+  const before = db.prepare("select * from aircraft where id='a2'").get();
+  const first = await call(
+    "/flight_records",
+    "POST",
+    {
+      aircraft_id: "a2",
+      pilot_id: "p1",
+      dz: "Georgia",
+      flight_date: "2030-04-10",
+      start_time: before.hobbs,
+      end_time: before.hobbs + 0.3,
+      start_cycles: before.tcsn,
+      end_cycles: before.tcsn + 2,
+      loads: 2,
+    },
+    "pilot",
+  );
+  assert.equal(first.status, 201);
+  const moved = db.prepare("select * from aircraft where id='a2'").get();
+  assert.equal(moved.dz, "Georgia");
+  assert.equal(moved.hobbs, before.hobbs + 0.3);
+
+  const stale = await call(
+    "/flight_records",
+    "POST",
+    {
+      aircraft_id: "a2",
+      pilot_id: "p2",
+      dz: "Tennessee",
+      flight_date: "2030-04-10",
+      start_time: before.hobbs,
+      end_time: before.hobbs + 0.2,
+      start_cycles: before.tcsn,
+      end_cycles: before.tcsn + 1,
+      loads: 1,
+    },
+  );
+  assert.equal(stale.status, 400);
+  assert.match(stale.data.error, /updated by another pilot/i);
+
+  const second = await call(
+    "/flight_records",
+    "POST",
+    {
+      aircraft_id: "a2",
+      pilot_id: "p2",
+      dz: "Tennessee",
+      flight_date: "2030-04-10",
+      start_time: moved.hobbs,
+      end_time: moved.hobbs + 0.4,
+      start_cycles: moved.tcsn,
+      end_cycles: moved.tcsn + 3,
+      loads: 3,
+    },
+  );
+  assert.equal(second.status, 201);
+  const finalAircraft = db.prepare("select * from aircraft where id='a2'").get();
+  assert.equal(finalAircraft.dz, "Tennessee");
+  assert.equal(finalAircraft.hobbs, moved.hobbs + 0.4);
+  assert.equal(
+    db
+      .prepare(
+        "select count(*) count from flight_records where id in (?,?) and archived_at is null",
+      )
+      .get(first.data.id, second.data.id).count,
+    2,
+  );
+});
 test("Twin Otter flight advances both engine time and cycle counters", async () => {
   db.prepare(
     `update aircraft set hobbs=100,ttsn=9000,tcsn=7000,time=100,cycles=7000,
