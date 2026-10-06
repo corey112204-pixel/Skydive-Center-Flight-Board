@@ -623,6 +623,8 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       serial_number: "PCE-TEST",
       baseline_ttsn: 5000,
       baseline_csn: 800,
+      baseline_ttsoh: 1200,
+      baseline_tcsoh: 300,
       baseline_starts: 100,
       baseline_flights: 1000,
       cycle_basis: "flights",
@@ -712,6 +714,8 @@ test("PT6A component cycles follow configured factors and recalculate after corr
   assert.equal(trackedEngine.total_starts, 101);
   assert.equal(trackedEngine.total_flights, 1004);
   assert.equal(trackedEngine.current_ttsn, 5001);
+  assert.equal(trackedEngine.current_ttsoh, 1201);
+  assert.equal(trackedEngine.current_tcsoh, 304);
   assert.equal(trackedComponent.equivalent_cycles_since_baseline, 1.75);
   assert.equal(trackedComponent.current_cycles, 101.75);
   assert.equal(trackedComponent.remaining_cycles, 1898.25);

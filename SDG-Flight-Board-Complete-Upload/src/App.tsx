@@ -1781,6 +1781,8 @@ function Maintenance({
                 <div className="engine-totals">
                   <span><small>TTSN</small><b>{Number(engine.current_ttsn).toFixed(1)}</b></span>
                   <span><small>CSN</small><b>{Number(engine.current_csn).toFixed(1)}</b></span>
+                  <span><small>TTSOH</small><b>{Number(engine.current_ttsoh).toFixed(1)}</b></span>
+                  <span><small>TCSOH</small><b>{Number(engine.current_tcsoh).toFixed(1)}</b></span>
                   <span><small>ENGINE STARTS</small><b>{Number(engine.total_starts).toLocaleString()}</b></span>
                   <span><small>FLIGHTS</small><b>{Number(engine.total_flights).toLocaleString()}</b></span>
                 </div>
@@ -3660,8 +3662,10 @@ function EngineModal({
           serial_number: String(form.serial_number),
           baseline_ttsn: Number(form.baseline_ttsn),
           baseline_csn: Number(form.baseline_csn),
-          baseline_starts: Number(form.baseline_starts),
-          baseline_flights: Number(form.baseline_flights),
+          baseline_ttsoh: Number(form.baseline_ttsoh),
+          baseline_tcsoh: Number(form.baseline_tcsoh),
+          baseline_starts: Number(form.baseline_starts || 0),
+          baseline_flights: Number(form.baseline_flights || 0),
           cycle_basis: String(form.cycle_basis),
           tracking_start_date: String(form.tracking_start_date),
           source_reference: String(form.source_reference || ""),
@@ -3675,8 +3679,14 @@ function EngineModal({
           <Field label="TRACKING START DATE"><input name="tracking_start_date" type="date" required defaultValue={value?.tracking_start_date || localDate()} /></Field>
           <Field label="TTSN AT BASELINE"><input name="baseline_ttsn" type="number" min="0" step=".1" required defaultValue={value?.baseline_ttsn ?? ""} /></Field>
           <Field label="CSN AT BASELINE"><input name="baseline_csn" type="number" min="0" step=".1" required defaultValue={value?.baseline_csn ?? ""} /></Field>
-          <Field label="TOTAL STARTS AT BASELINE"><input name="baseline_starts" type="number" min="0" step="1" required defaultValue={value?.baseline_starts ?? ""} /></Field>
-          <Field label="TOTAL FLIGHTS AT BASELINE"><input name="baseline_flights" type="number" min="0" step="1" required defaultValue={value?.baseline_flights ?? ""} /></Field>
+          <Field label="TTSOH AT BASELINE"><input name="baseline_ttsoh" type="number" min="0" step=".1" required defaultValue={value?.baseline_ttsoh ?? ""} /></Field>
+          <Field label="TCSOH AT BASELINE"><input name="baseline_tcsoh" type="number" min="0" step=".1" required defaultValue={value?.baseline_tcsoh ?? ""} /></Field>
+          <div className="both-note wide">
+            <CircleGauge />
+            <span><b>No historical start or flight count?</b><small>Leave these counters at 0. The app will begin counting new starts and flights from the tracking start date; do not estimate missing history.</small></span>
+          </div>
+          <Field label="START COUNT AT TRACKING START"><input name="baseline_starts" type="number" min="0" step="1" defaultValue={value?.baseline_starts ?? 0} /></Field>
+          <Field label="FLIGHT COUNT AT TRACKING START"><input name="baseline_flights" type="number" min="0" step="1" defaultValue={value?.baseline_flights ?? 0} /></Field>
           <Field label="ENGINE CSN ACCUMULATES BY">
             <select name="cycle_basis" defaultValue={value?.cycle_basis || "flights"}>
               <option value="flights">Flights</option>
@@ -3727,8 +3737,12 @@ function EngineComponentModal({
           serial_number: String(form.get("serial_number")),
           max_cycles: Number(form.get("max_cycles")),
           baseline_component_cycles: Number(form.get("baseline_component_cycles")),
-          baseline_engine_starts: Number(form.get("baseline_engine_starts")),
-          baseline_engine_flights: Number(form.get("baseline_engine_flights")),
+          baseline_engine_starts: replacement
+            ? Number(engine?.total_starts || 0)
+            : Number(value?.baseline_engine_starts ?? engine?.total_starts ?? 0),
+          baseline_engine_flights: replacement
+            ? Number(engine?.total_flights || 0)
+            : Number(value?.baseline_engine_flights ?? engine?.total_flights ?? 0),
           acf: Number(form.get("acf")),
           fcf: Number(form.get("fcf")),
           warning_cycles: Number(form.get("warning_cycles")),
@@ -3760,8 +3774,7 @@ function EngineComponentModal({
           <Field label="SERIAL NUMBER"><input name="serial_number" required defaultValue={replacement ? "" : value?.serial_number || ""} /></Field>
           <Field label="APPROVED MAXIMUM LIFE CYCLES"><input name="max_cycles" type="number" min="0.1" step=".1" required defaultValue={replacement ? "" : value?.max_cycles ?? ""} /></Field>
           <Field label="DOCUMENTED COMPONENT CYCLES AT BASELINE"><input name="baseline_component_cycles" type="number" min="0" step=".1" required defaultValue={replacement ? "" : value?.baseline_component_cycles ?? ""} /></Field>
-          <Field label="ENGINE STARTS AT BASELINE"><input name="baseline_engine_starts" type="number" min="0" step="1" required defaultValue={replacement ? engine?.total_starts ?? "" : value?.baseline_engine_starts ?? engine?.total_starts ?? ""} /></Field>
-          <Field label="ENGINE FLIGHTS AT BASELINE"><input name="baseline_engine_flights" type="number" min="0" step="1" required defaultValue={replacement ? engine?.total_flights ?? "" : value?.baseline_engine_flights ?? engine?.total_flights ?? ""} /></Field>
+          <div className="both-note wide"><CircleGauge /><span><b>Use the component's current accumulated cycles</b><small>Enter the documented component cycles shown by the old tracker on this baseline date. The app automatically snapshots the engine start and flight counters from this date forward.</small></span></div>
           <Field label="ABBREVIATED CYCLE FACTOR (ACF)"><input name="acf" type="number" min=".0001" step=".0001" required defaultValue={replacement ? "" : value?.acf ?? ""} /></Field>
           <Field label="FLIGHT COUNT FACTOR (FCF)"><input name="fcf" type="number" min=".0001" step=".0001" required defaultValue={replacement ? "" : value?.fcf ?? ""} /></Field>
           <Field label="ADVANCE WARNING — REMAINING CYCLES"><input name="warning_cycles" type="number" min="0" step="1" required defaultValue={replacement ? value?.warning_cycles ?? 250 : value?.warning_cycles ?? 250} /></Field>

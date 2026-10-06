@@ -30,6 +30,7 @@ create table if not exists sessions(token text primary key,user_id text not null
 db.exec(`create table if not exists engines(
   id text primary key,aircraft_id text not null,position text not null,model text not null,
   serial_number text not null,baseline_ttsn real not null,baseline_csn real not null,
+  baseline_ttsoh real not null default 0,baseline_tcsoh real not null default 0,
   baseline_starts integer not null,baseline_flights integer not null,cycle_basis text not null default 'flights',
   tracking_start_date text not null,source_reference text,status text not null default 'Active',
   created_at text not null,archived_at text
@@ -103,6 +104,8 @@ for (const [table, column, type] of [
   ["maintenance", "interval_months", "integer"],
   ["maintenance", "interval_cycles", "integer"],
   ["flight_records", "archived_at", "text"],
+  ["engines", "baseline_ttsoh", "real"],
+  ["engines", "baseline_tcsoh", "real"],
 ])
   if (
     !db
@@ -575,6 +578,8 @@ export function handler(req, res) {
           ...engine,
           current_ttsn: Number(engine.baseline_ttsn) + Number(activity.hours),
           current_csn: Number(engine.baseline_csn) + csnDelta,
+          current_ttsoh: Number(engine.baseline_ttsoh || 0) + Number(activity.hours),
+          current_tcsoh: Number(engine.baseline_tcsoh || 0) + csnDelta,
           total_starts: starts,
           total_flights: flights,
           tracked_hours: Number(activity.hours),
@@ -1258,6 +1263,10 @@ export function handler(req, res) {
         d.created_at = d.created_at || now();
         d.status = d.status || "Active";
         d.cycle_basis = d.cycle_basis === "starts" ? "starts" : "flights";
+        d.baseline_starts = Number(d.baseline_starts || 0);
+        d.baseline_flights = Number(d.baseline_flights || 0);
+        d.baseline_ttsoh = Number(d.baseline_ttsoh || 0);
+        d.baseline_tcsoh = Number(d.baseline_tcsoh || 0);
       }
       if (resource === "engine_components") {
         d.created_at = d.created_at || now();
@@ -1447,6 +1456,8 @@ function validate(r, d) {
       "serial_number",
       "baseline_ttsn",
       "baseline_csn",
+      "baseline_ttsoh",
+      "baseline_tcsoh",
       "baseline_starts",
       "baseline_flights",
       "tracking_start_date",
