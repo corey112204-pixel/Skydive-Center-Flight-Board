@@ -1016,24 +1016,12 @@ export function handler(req, res) {
            engine_ttsn=case when engine_ttsn is null then null else engine_ttsn+? end,
            engine_ttsoh=case when engine_ttsoh is null then null else engine_ttsoh+? end,
            engine_tcsn=case when engine_tcsn is null then null else engine_tcsn+? end,
-           engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end,
-           engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
-           engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
-           engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
-           engine1_ttsn=case when engine1_ttsn is null then null else engine1_ttsn+? end,
-           engine1_tcsn=case when engine1_tcsn is null then null else engine1_tcsn+? end,
-           engine2_tsmoh=case when engine2_tsmoh is null then null else engine2_tsmoh+? end,
-           engine2_tshsi=case when engine2_tshsi is null then null else engine2_tshsi+? end,
-           engine2_tcsoh=case when engine2_tcsoh is null then null else engine2_tcsoh+? end,
-           engine2_ttsn=case when engine2_ttsn is null then null else engine2_ttsn+? end,
-           engine2_tcsn=case when engine2_tcsn is null then null else engine2_tcsn+? end
+           engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end
            where id=?`,
         ).run(
           d.dz, +d.end_time, +d.end_time, d.end_cycles ?? null,
           total, tc || 0,
           total, total, tc || 0, tc || 0,
-          total, total, tc || 0, total, tc || 0,
-          total, total, tc || 0, total, tc || 0,
           d.aircraft_id,
         );
         if (d.squawk_description) {
@@ -1260,7 +1248,7 @@ export function handler(req, res) {
           });
         d.pilot_id = currentUser.pilot_id;
       }
-      if (role === "pilot" && resource === "documents")
+      if (resource === "documents")
         d.uploaded_by = currentUser.pilot_id || currentUser.id;
       if (resource === "squawks") {
         d.created_at = d.created_at || now();
@@ -1415,23 +1403,12 @@ function updateAircraftTotals(id, timeDelta, cycleDelta) {
       engine_ttsn=case when engine_ttsn is null then null else engine_ttsn+? end,
       engine_ttsoh=case when engine_ttsoh is null then null else engine_ttsoh+? end,
       engine_tcsn=case when engine_tcsn is null then null else engine_tcsn+? end,
-      engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end,
-      engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
-      engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
-      engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
-      engine1_ttsn=case when engine1_ttsn is null then null else engine1_ttsn+? end,
-      engine1_tcsn=case when engine1_tcsn is null then null else engine1_tcsn+? end,
-      engine2_tsmoh=case when engine2_tsmoh is null then null else engine2_tsmoh+? end,
-      engine2_tshsi=case when engine2_tshsi is null then null else engine2_tshsi+? end,
-      engine2_tcsoh=case when engine2_tcsoh is null then null else engine2_tcsoh+? end,
-      engine2_ttsn=case when engine2_ttsn is null then null else engine2_ttsn+? end,
-      engine2_tcsn=case when engine2_tcsn is null then null else engine2_tcsn+? end
+      engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end
       where id=?`,
   ).run(
     timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, cycleDelta,
-    timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
-    timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta, id,
+    id,
   );
 }
 function updateAircraftCumulativeTotals(id, timeDelta, cycleDelta) {
@@ -1441,23 +1418,12 @@ function updateAircraftCumulativeTotals(id, timeDelta, cycleDelta) {
       engine_ttsn=case when engine_ttsn is null then null else engine_ttsn+? end,
       engine_ttsoh=case when engine_ttsoh is null then null else engine_ttsoh+? end,
       engine_tcsn=case when engine_tcsn is null then null else engine_tcsn+? end,
-      engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end,
-      engine1_tsmoh=case when engine1_tsmoh is null then null else engine1_tsmoh+? end,
-      engine1_tshsi=case when engine1_tshsi is null then null else engine1_tshsi+? end,
-      engine1_tcsoh=case when engine1_tcsoh is null then null else engine1_tcsoh+? end,
-      engine1_ttsn=case when engine1_ttsn is null then null else engine1_ttsn+? end,
-      engine1_tcsn=case when engine1_tcsn is null then null else engine1_tcsn+? end,
-      engine2_tsmoh=case when engine2_tsmoh is null then null else engine2_tsmoh+? end,
-      engine2_tshsi=case when engine2_tshsi is null then null else engine2_tshsi+? end,
-      engine2_tcsoh=case when engine2_tcsoh is null then null else engine2_tcsoh+? end,
-      engine2_ttsn=case when engine2_ttsn is null then null else engine2_ttsn+? end,
-      engine2_tcsn=case when engine2_tcsn is null then null else engine2_tcsn+? end
+      engine_tcsoh=case when engine_tcsoh is null then null else engine_tcsoh+? end
       where id=?`,
   ).run(
     cycleDelta, timeDelta, cycleDelta,
     timeDelta, timeDelta, cycleDelta, cycleDelta,
-    timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta,
-    timeDelta, timeDelta, cycleDelta, timeDelta, cycleDelta, id,
+    id,
   );
 }
 function validate(r, d) {

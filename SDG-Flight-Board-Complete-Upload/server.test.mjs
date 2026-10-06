@@ -310,6 +310,30 @@ test("notification read status is stored per account", async () => {
     after.data.notifications.find((x) => x.id === notification.id).read_at,
   );
 });
+test("weekly load sheet images upload to Documents and can be removed", async () => {
+  const uploaded = await call(
+    "/documents",
+    "POST",
+    {
+      folder: "Load Sheets",
+      file_name: "week-ending-2030-04-07.jpg",
+      mime_type: "image/jpeg",
+      image_data: "data:image/jpeg;base64,/9j/4AAQ",
+      week_ending: "2030-04-07",
+      uploaded_by: "ignored-client-value",
+      created_at: new Date().toISOString(),
+    },
+    "pilot",
+  );
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.data.uploaded_by, "p1");
+  let state = await call("/state", "GET", undefined, "maintenance");
+  assert(state.data.documents.some((document) => document.id === uploaded.data.id));
+  const removed = await call(`/documents/${uploaded.data.id}`, "DELETE", undefined, "maintenance");
+  assert.equal(removed.status, 200);
+  state = await call("/state", "GET", undefined, "maintenance");
+  assert(!state.data.documents.some((document) => document.id === uploaded.data.id));
+});
 test("only pilots create squawks and maintenance updates them", async () => {
   const denied = await call(
     "/squawks",
@@ -517,7 +541,7 @@ test("sequential pilot records stay separate and use the latest aircraft locatio
     2,
   );
 });
-test("Twin Otter flight advances both engine time and cycle counters", async () => {
+test("Twin Otter flight advances airframe totals without changing legacy engine fields", async () => {
   db.prepare(
     `update aircraft set hobbs=100,ttsn=9000,tcsn=7000,time=100,cycles=7000,
      engine1_ttsn=5000,engine1_tsmoh=400,engine1_tshsi=200,engine1_tcsn=4500,engine1_tcsoh=300,
@@ -545,13 +569,13 @@ test("Twin Otter flight advances both engine time and cycle counters", async () 
   assert.equal(updated.hobbs, 101.2);
   assert.equal(updated.ttsn, 9001.2);
   assert.equal(updated.tcsn, 7004);
-  assert.equal(updated.engine1_ttsn, 5001.2);
-  assert.equal(updated.engine1_tsmoh, 401.2);
-  assert.equal(updated.engine1_tshsi, 201.2);
-  assert.equal(updated.engine1_tcsn, 4504);
-  assert.equal(updated.engine1_tcsoh, 304);
-  assert.equal(updated.engine2_ttsn, 5101.2);
-  assert.equal(updated.engine2_tcsn, 4604);
+  assert.equal(updated.engine1_ttsn, 5000);
+  assert.equal(updated.engine1_tsmoh, 400);
+  assert.equal(updated.engine1_tshsi, 200);
+  assert.equal(updated.engine1_tcsn, 4500);
+  assert.equal(updated.engine1_tcsoh, 300);
+  assert.equal(updated.engine2_ttsn, 5100);
+  assert.equal(updated.engine2_tcsn, 4600);
 });
 test("deleting a daily record archives it and reverses aircraft totals", async () => {
   const before = db.prepare("select * from aircraft where id='a2'").get();

@@ -1743,18 +1743,6 @@ function Maintenance({
             <Field label="ENGINE TTSOH"><input name="engine_ttsoh" type="number" min="0" step=".1" required defaultValue={ac.engine_ttsoh ?? ""} /></Field>
             <Field label="ENGINE TCSOH"><input name="engine_tcsoh" type="number" min="0" step="1" required defaultValue={ac.engine_tcsoh ?? ""} /></Field>
           </>}
-          {ac.type === "Twin Otter" && <>
-            <Field label="ENGINE 1 TTSN"><input name="engine1_ttsn" type="number" min="0" step=".1" required defaultValue={ac.engine1_ttsn ?? ""} /></Field>
-            <Field label="ENGINE 1 TSMOH"><input name="engine1_tsmoh" type="number" min="0" step=".1" required defaultValue={ac.engine1_tsmoh ?? ""} /></Field>
-            <Field label="ENGINE 1 TSHSI"><input name="engine1_tshsi" type="number" min="0" step=".1" required defaultValue={ac.engine1_tshsi ?? ""} /></Field>
-            <Field label="ENGINE 1 TCSN"><input name="engine1_tcsn" type="number" min="0" step="1" required defaultValue={ac.engine1_tcsn ?? ""} /></Field>
-            <Field label="ENGINE 1 TCSOH"><input name="engine1_tcsoh" type="number" min="0" step="1" required defaultValue={ac.engine1_tcsoh ?? ""} /></Field>
-            <Field label="ENGINE 2 TTSN"><input name="engine2_ttsn" type="number" min="0" step=".1" required defaultValue={ac.engine2_ttsn ?? ""} /></Field>
-            <Field label="ENGINE 2 TSMOH"><input name="engine2_tsmoh" type="number" min="0" step=".1" required defaultValue={ac.engine2_tsmoh ?? ""} /></Field>
-            <Field label="ENGINE 2 TSHSI"><input name="engine2_tshsi" type="number" min="0" step=".1" required defaultValue={ac.engine2_tshsi ?? ""} /></Field>
-            <Field label="ENGINE 2 TCSN"><input name="engine2_tcsn" type="number" min="0" step="1" required defaultValue={ac.engine2_tcsn ?? ""} /></Field>
-            <Field label="ENGINE 2 TCSOH"><input name="engine2_tcsoh" type="number" min="0" step="1" required defaultValue={ac.engine2_tcsoh ?? ""} /></Field>
-          </>}
           <button className="primary">Save tracking totals</button>
         </form>
       </Section>
@@ -2807,12 +2795,6 @@ function DayModal({
               <span><small>ENGINE TTSN</small><b>{(Number(ac.engine_ttsn || 0) + counterDelta).toFixed(1)}</b></span>
               <span><small>ENGINE TTSOH</small><b>{(Number(ac.engine_ttsoh || 0) + counterDelta).toFixed(1)}</b></span>
             </>}
-            {ac.type === "Twin Otter" && <>
-              <span><small>ENG 1 TSMOH</small><b>{(Number(ac.engine1_tsmoh || 0) + counterDelta).toFixed(1)}</b></span>
-              <span><small>ENG 1 TSHSI</small><b>{(Number(ac.engine1_tshsi || 0) + counterDelta).toFixed(1)}</b></span>
-              <span><small>ENG 2 TSMOH</small><b>{(Number(ac.engine2_tsmoh || 0) + counterDelta).toFixed(1)}</b></span>
-              <span><small>ENG 2 TSHSI</small><b>{(Number(ac.engine2_tshsi || 0) + counterDelta).toFixed(1)}</b></span>
-            </>}
           </div>}
           <Field label="NUMBER OF LOADS">
             <input
@@ -3291,18 +3273,7 @@ function AircraftModal({
             ttsn: number("ttsn"),
             tcsn: number("tcsn"),
             cycles: number("tcsn"),
-            ...(aircraftType === "Twin Otter" ? {
-              engine1_ttsn: number("engine1_ttsn"),
-              engine1_tsmoh: number("engine1_tsmoh"),
-              engine1_tshsi: number("engine1_tshsi"),
-              engine1_tcsn: number("engine1_tcsn"),
-              engine1_tcsoh: number("engine1_tcsoh"),
-              engine2_ttsn: number("engine2_ttsn"),
-              engine2_tsmoh: number("engine2_tsmoh"),
-              engine2_tshsi: number("engine2_tshsi"),
-              engine2_tcsn: number("engine2_tcsn"),
-              engine2_tcsoh: number("engine2_tcsoh"),
-            } : aircraftType === "PAC 750" ? {
+            ...(aircraftType === "PAC 750" ? {
               engine_ttsn: number("engine_ttsn"),
               engine_tcsn: number("engine_tcsn"),
               engine_ttsoh: number("engine_ttsoh"),
@@ -3342,18 +3313,6 @@ function AircraftModal({
             <Field label="ENGINE TTSOH"><input name="engine_ttsoh" required type="number" min="0" step=".1" /></Field>
             <Field label="ENGINE TCSOH"><input name="engine_tcsoh" required type="number" min="0" step="1" /></Field>
           </>}
-          {aircraftType === "Twin Otter" && <>
-            <Field label="ENGINE 1 TTSN"><input name="engine1_ttsn" required type="number" min="0" step=".1" /></Field>
-            <Field label="ENGINE 1 TSMOH"><input name="engine1_tsmoh" required type="number" min="0" step=".1" /></Field>
-            <Field label="ENGINE 1 TSHSI"><input name="engine1_tshsi" required type="number" min="0" step=".1" /></Field>
-            <Field label="ENGINE 1 TCSN"><input name="engine1_tcsn" required type="number" min="0" step="1" /></Field>
-            <Field label="ENGINE 1 TCSOH"><input name="engine1_tcsoh" required type="number" min="0" step="1" /></Field>
-            <Field label="ENGINE 2 TTSN"><input name="engine2_ttsn" required type="number" min="0" step=".1" /></Field>
-            <Field label="ENGINE 2 TSMOH"><input name="engine2_tsmoh" required type="number" min="0" step=".1" /></Field>
-            <Field label="ENGINE 2 TSHSI"><input name="engine2_tshsi" required type="number" min="0" step=".1" /></Field>
-            <Field label="ENGINE 2 TCSN"><input name="engine2_tcsn" required type="number" min="0" step="1" /></Field>
-            <Field label="ENGINE 2 TCSOH"><input name="engine2_tcsoh" required type="number" min="0" step="1" /></Field>
-          </>}
           <Field label="AIRCRAFT PHOTO">
             <input
               name="photo"
@@ -3379,6 +3338,33 @@ const fileToData = (file: File) =>
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error("Could not read image"));
+    reader.readAsDataURL(file);
+  });
+const loadSheetImageToData = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    if (!file.type.startsWith("image/"))
+      return reject(new Error("Choose a photo or image of the load sheet"));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read the load sheet photo"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("This image format could not be opened. Try a JPEG or PNG photo."));
+      image.onload = () => {
+        const maxDimension = 2200,
+          scale = Math.min(1, maxDimension / Math.max(image.width, image.height)),
+          canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) return reject(new Error("Could not prepare the load sheet image"));
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const data = canvas.toDataURL("image/jpeg", 0.82);
+        if (data.length > 6_500_000)
+          return reject(new Error("The compressed load sheet is still too large. Retake the photo at a lower resolution."));
+        resolve(data);
+      };
+      image.src = String(reader.result);
+    };
     reader.readAsDataURL(file);
   });
 function TimeOffModal({
@@ -3428,8 +3414,11 @@ function LoadSheetModal({
   submit,
 }: {
   close: () => void;
-  submit: (d: any) => void;
+  submit: (d: any) => Promise<void> | void;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const latestSunday = new Date();
+  latestSunday.setDate(latestSunday.getDate() - latestSunday.getDay());
   return (
     <ModalShell
       title="Upload weekly load sheet"
@@ -3439,41 +3428,46 @@ function LoadSheetModal({
       <form
         onSubmit={async (e) => {
           e.preventDefault();
-          const form = new FormData(e.currentTarget);
-          const file = form.get("photo") as File;
-          const weekEnding = String(form.get("week_ending"));
-          const parsed = new Date(`${weekEnding}T12:00:00`);
-          if (parsed.getDay() !== 0) {
-            setFieldError(e.currentTarget, "Week ending must be a Sunday");
-            return;
+          const uploadForm = e.currentTarget;
+          setFieldError(uploadForm, "");
+          try {
+            setUploading(true);
+            const form = new FormData(uploadForm),
+              file = form.get("photo") as File,
+              weekEnding = String(form.get("week_ending")),
+              parsed = new Date(`${weekEnding}T12:00:00`);
+            if (!file?.size) throw new Error("Choose a load sheet photo");
+            if (parsed.getDay() !== 0)
+              throw new Error("Week ending must be a Sunday");
+            if (parsed.getTime() > Date.now())
+              throw new Error("The weekly sheet can be uploaded on or after that Sunday");
+            const baseName = file.name.replace(/\.[^.]+$/, "") || "load-sheet";
+            await submit({
+              folder: "Load Sheets",
+              file_name: `${baseName}.jpg`,
+              mime_type: "image/jpeg",
+              image_data: await loadSheetImageToData(file),
+              week_ending: weekEnding,
+              uploaded_by: "current-account",
+              created_at: new Date().toISOString(),
+            });
+          } catch (error: any) {
+            setFieldError(uploadForm, error.message || "The load sheet could not be uploaded");
+          } finally {
+            setUploading(false);
           }
-          if (parsed.getTime() > Date.now()) {
-            setFieldError(
-              e.currentTarget,
-              "The weekly sheet can be uploaded on or after that Sunday",
-            );
-            return;
-          }
-          submit({
-            folder: "Load Sheets",
-            file_name: file.name,
-            mime_type: file.type,
-            image_data: await fileToData(file),
-            week_ending: weekEnding,
-            uploaded_by: "p1",
-            created_at: new Date().toISOString(),
-          });
         }}
       >
         <div className="form-grid">
           <Field label="WEEK ENDING SUNDAY">
-            <input name="week_ending" type="date" required />
+            <input name="week_ending" type="date" required defaultValue={localDate(latestSunday)} />
           </Field>
           <Field label="LOAD SHEET PHOTO">
             <input
               name="photo"
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/*"
+              capture="environment"
               required
             />
           </Field>
@@ -3483,8 +3477,8 @@ function LoadSheetModal({
           <button type="button" className="ghost" onClick={close}>
             Cancel
           </button>
-          <button className="primary">
-            <FolderOpen /> Store in Documents
+          <button className="primary" disabled={uploading}>
+            <FolderOpen /> {uploading ? "Preparing photo…" : "Store in Documents"}
           </button>
         </div>
       </form>
