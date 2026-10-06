@@ -3666,7 +3666,7 @@ function EngineModal({
           baseline_tcsoh: Number(form.baseline_tcsoh),
           baseline_starts: Number(form.baseline_starts || 0),
           baseline_flights: Number(form.baseline_flights || 0),
-          cycle_basis: String(form.cycle_basis),
+          cycle_basis: "actual_cycles",
           tracking_start_date: String(form.tracking_start_date),
           source_reference: String(form.source_reference || ""),
           status: "Active",
@@ -3687,12 +3687,7 @@ function EngineModal({
           </div>
           <Field label="START COUNT AT TRACKING START"><input name="baseline_starts" type="number" min="0" step="1" defaultValue={value?.baseline_starts ?? 0} /></Field>
           <Field label="FLIGHT COUNT AT TRACKING START"><input name="baseline_flights" type="number" min="0" step="1" defaultValue={value?.baseline_flights ?? 0} /></Field>
-          <Field label="ENGINE CSN ACCUMULATES BY">
-            <select name="cycle_basis" defaultValue={value?.cycle_basis || "flights"}>
-              <option value="flights">Flights</option>
-              <option value="starts">Engine starts</option>
-            </select>
-          </Field>
+          <div className="both-note wide"><CircleGauge /><span><b>CSN and TCSOH use actual cycles</b><small>The separate Cycles Today value in Daily Operations updates these totals. Loads and engine starts remain separate for component-life calculations.</small></span></div>
           <Field label="BASELINE SOURCE / RECORD REFERENCE" wide><textarea name="source_reference" defaultValue={value?.source_reference || ""} placeholder="Logbook entry, work order, or approved record reference" /></Field>
         </div>
         <div className="modal-actions">

@@ -714,6 +714,7 @@ test("PT6A component cycles follow configured factors and recalculate after corr
   assert.equal(trackedEngine.total_starts, 101);
   assert.equal(trackedEngine.total_flights, 1004);
   assert.equal(trackedEngine.current_ttsn, 5001);
+  assert.equal(trackedEngine.current_csn, 804);
   assert.equal(trackedEngine.current_ttsoh, 1201);
   assert.equal(trackedEngine.current_tcsoh, 304);
   assert.equal(trackedComponent.equivalent_cycles_since_baseline, 1.75);

@@ -563,7 +563,7 @@ export function handler(req, res) {
         const activity = db
           .prepare(
             `select coalesce(sum(o.starts),0) starts,coalesce(sum(o.flights),0) flights,
-             coalesce(sum(f.total_time),0) hours
+             coalesce(sum(f.total_time),0) hours,coalesce(sum(f.total_cycles),0) cycles
              from flight_engine_operations o
              join flight_records f on f.id=o.flight_record_id
              where o.engine_id=? and f.archived_at is null and f.flight_date>=?`,
@@ -571,9 +571,7 @@ export function handler(req, res) {
           .get(engine.id, engine.tracking_start_date),
           starts = Number(engine.baseline_starts) + Number(activity.starts),
           flights = Number(engine.baseline_flights) + Number(activity.flights),
-          csnDelta = engine.cycle_basis === "starts"
-            ? Number(activity.starts)
-            : Number(activity.flights);
+          csnDelta = Number(activity.cycles);
         return {
           ...engine,
           current_ttsn: Number(engine.baseline_ttsn) + Number(activity.hours),
@@ -1262,7 +1260,7 @@ export function handler(req, res) {
       if (resource === "engines") {
         d.created_at = d.created_at || now();
         d.status = d.status || "Active";
-        d.cycle_basis = d.cycle_basis === "starts" ? "starts" : "flights";
+        d.cycle_basis = "actual_cycles";
         d.baseline_starts = Number(d.baseline_starts || 0);
         d.baseline_flights = Number(d.baseline_flights || 0);
         d.baseline_ttsoh = Number(d.baseline_ttsoh || 0);
