@@ -3421,6 +3421,7 @@ function LoadSheetModal({
   submit: (d: any) => Promise<void> | void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
   const latestSunday = new Date();
   latestSunday.setDate(latestSunday.getDate() - latestSunday.getDay());
   return (
@@ -3437,7 +3438,7 @@ function LoadSheetModal({
           try {
             setUploading(true);
             const form = new FormData(uploadForm),
-              file = form.get("photo") as File,
+              file = photo,
               weekEnding = String(form.get("week_ending")),
               parsed = new Date(`${weekEnding}T12:00:00`);
             if (!file?.size) throw new Error("Choose a load sheet photo");
@@ -3466,15 +3467,29 @@ function LoadSheetModal({
           <Field label="WEEK ENDING SUNDAY">
             <input name="week_ending" type="date" required defaultValue={localDate(latestSunday)} />
           </Field>
-          <Field label="LOAD SHEET PHOTO">
-            <input
-              name="photo"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              required
-            />
-          </Field>
+          <div className="wide upload-photo-options">
+            <span>LOAD SHEET PHOTO</span>
+            <div>
+              <label className="photo-button">
+                <FolderOpen /> Choose from photo library
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setPhoto(event.target.files?.[0] || null)}
+                />
+              </label>
+              <label className="photo-button">
+                <Camera /> Take a new photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => setPhoto(event.target.files?.[0] || null)}
+                />
+              </label>
+            </div>
+            <small>{photo ? `Selected: ${photo.name}` : "Choose an existing picture or take one with the camera."}</small>
+          </div>
           <p className="field-message wide" aria-live="polite" />
         </div>
         <div className="modal-actions">
