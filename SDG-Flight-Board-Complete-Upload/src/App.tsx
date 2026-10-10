@@ -884,6 +884,21 @@ function Dashboard({
   const mx = (state.maintenance || []).filter((x) =>
     fleet.some((a) => a.id === x.aircraft_id),
   );
+  const maintenanceWatch = [...(state.maintenance || [])]
+    .sort((a, b) => {
+      const statusOrder: Record<string, number> = {
+        Overdue: 0,
+        "Due soon": 1,
+        OK: 2,
+        Tracking: 3,
+      };
+      const statusDifference = (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4);
+      if (statusDifference) return statusDifference;
+      const urgencyDifference = Number(a.urgency_score ?? 1e12) - Number(b.urgency_score ?? 1e12);
+      if (urgencyDifference) return urgencyDifference;
+      return String(a.item).localeCompare(String(b.item));
+    })
+    .slice(0, 3);
   const loads = records.reduce((sum, x) => sum + Number(x.loads || 0), 0);
   const hours = records.reduce((sum, x) => sum + Number(x.total_time || 0), 0);
   const grounded = fleet.filter((x) => x.status === "Grounded");
@@ -1066,7 +1081,7 @@ function Dashboard({
         <div className="side-stack">
           <Section title="Maintenance watch">
             <div className="watch">
-              {mx.slice(0, 3).map((m) => (
+              {maintenanceWatch.map((m) => (
                 <div key={m.id}>
                   <span
                     className={`dot ${m.status === "Overdue" ? "danger" : m.status === "Due soon" ? "warning" : "success"}`}
@@ -1080,6 +1095,9 @@ function Dashboard({
                   <ChevronDown />
                 </div>
               ))}
+              {!maintenanceWatch.length && (
+                <div className="empty-mini"><Wrench /><b>No maintenance reminders</b></div>
+              )}
             </div>
             <button className="full ghost" onClick={() => go("maintenance")}>
               View all maintenance

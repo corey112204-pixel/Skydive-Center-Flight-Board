@@ -207,6 +207,8 @@ if (!db.prepare("select count(*) n from aircraft").get().n) {
 db.prepare(
   "update aircraft set hobbs=coalesce(hobbs,time),ttsn=coalesce(ttsn,time),tcsn=coalesce(tcsn,cycles)",
 ).run();
+// Remove only the discontinued photo-import records. Manually created reminders use unrelated IDs.
+db.prepare("delete from maintenance where id like 'import-n121pm-%'").run();
 const hashPassword = (password) => {
   const salt = randomBytes(16).toString("hex");
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
@@ -732,7 +734,22 @@ export function handler(req, res) {
           ].filter(Boolean),
           remainingValues = [hoursLeft, daysLeft, cyclesLeft].filter(
             (value) => value != null,
-          );
+          ),
+          urgencyRatios = [
+            hoursLeft == null
+              ? null
+              : hoursLeft / Math.max(Number(item.interval_hours || item.warning_hours || 100), 1),
+            daysLeft == null
+              ? null
+              : daysLeft / Math.max(
+                  Number(item.interval_days || (item.interval_months ? item.interval_months * 30.4375 : 0) || item.warning_days || 365),
+                  1,
+                ),
+            cyclesLeft == null
+              ? null
+              : cyclesLeft / Math.max(Number(item.interval_cycles || item.warning_cycles || 1000), 1),
+          ].filter((value) => value != null),
+          urgencyScore = urgencyRatios.length ? Math.min(...urgencyRatios) : 1000000000000;
         return {
           ...item,
           component,
@@ -740,6 +757,10 @@ export function handler(req, res) {
           due_cycle_basis: cycleBasis,
           remaining: remainingValues.length ? Math.min(...remainingValues) : 0,
           remaining_label: remainingParts.join(" / ") || "No due limit set",
+          hours_remaining: hoursLeft,
+          days_remaining: daysLeft,
+          cycles_remaining: cyclesLeft,
+          urgency_score: urgencyScore,
           status: overdue
             ? "Overdue"
             : soon
