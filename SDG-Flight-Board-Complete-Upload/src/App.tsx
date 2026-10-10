@@ -2686,6 +2686,7 @@ function DayModal({
     [confirmingDelete, setConfirmingDelete] = useState(false);
   const ac = acs.find((a) => a.id === aircraftId),
     availableEngines = engines.filter((engine) => engine.aircraft_id === aircraftId && engine.status === "Active"),
+    primaryEngine = availableEngines[0],
     start = startTime,
     total = end ? Math.max(0, Number(end) - start).toFixed(1) : "0.0",
     counterDelta = Number(total) - Number(value?.total_time || 0),
@@ -2719,13 +2720,12 @@ function DayModal({
           e.preventDefault();
           const f = Object.fromEntries(new FormData(e.currentTarget)),
             cycles = Number(f.cycles),
-            engineOperations = availableEngines
-              .filter((engine) => f[`engine_${engine.id}_operated`] === "on")
-              .map((engine) => ({
-                engine_id: engine.id,
-                starts: Number(f[`engine_${engine.id}_starts`] || 0),
-                flights: Number(f[`engine_${engine.id}_flights`] || 0),
-              }));
+            loads = Number(f.loads),
+            engineOperations = availableEngines.map((engine) => ({
+              engine_id: engine.id,
+              starts: cycles,
+              flights: loads,
+            }));
           submit({
             ...f,
             aircraft_id: aircraftId,
@@ -2812,8 +2812,8 @@ function DayModal({
           {ac && <div className="current-values wide">
             <span><small>NEW TTSN</small><b>{projectedTtsn.toFixed(1)}</b></span>
             {ac.type === "PAC 750" && <>
-              <span><small>ENGINE TTSN</small><b>{(Number(ac.engine_ttsn || 0) + counterDelta).toFixed(1)}</b></span>
-              <span><small>ENGINE TTSOH</small><b>{(Number(ac.engine_ttsoh || 0) + counterDelta).toFixed(1)}</b></span>
+              <span><small>ENGINE TTSN</small><b>{(Number(primaryEngine?.current_ttsn ?? ac.engine_ttsn ?? 0) + counterDelta).toFixed(1)}</b></span>
+              <span><small>ENGINE TTSOH</small><b>{(Number(primaryEngine?.current_ttsoh ?? ac.engine_ttsoh ?? 0) + counterDelta).toFixed(1)}</b></span>
             </>}
           </div>}
           <Field label="NUMBER OF LOADS">
@@ -2837,25 +2837,9 @@ function DayModal({
             />
           </Field>
           {availableEngines.length > 0 && (
-            <div className="engine-closeout wide">
-              <div className="engine-closeout-heading">
-                <CircleGauge />
-                <span><b>ENGINE OPERATIONS</b><small>Record starts separately from flights/loads.</small></span>
-              </div>
-              {availableEngines.map((engine) => {
-                const existing = (value?.engine_operations || []).find((operation: any) => operation.engine_id === engine.id);
-                const defaultOperated = Boolean(existing) || (!value?.id && availableEngines.length === 1);
-                return (
-                  <div className="engine-closeout-row" key={engine.id}>
-                    <label className="engine-operated">
-                      <input name={`engine_${engine.id}_operated`} type="checkbox" defaultChecked={defaultOperated} />
-                      <span><b>{engine.position}</b><small>{engine.model} · {engine.serial_number}</small></span>
-                    </label>
-                    <Field label="ENGINE STARTS"><input name={`engine_${engine.id}_starts`} type="number" min="0" step="1" defaultValue={existing?.starts ?? (defaultOperated ? 1 : 0)} /></Field>
-                    <Field label="FLIGHTS COMPLETED"><input name={`engine_${engine.id}_flights`} type="number" min="0" step="1" defaultValue={existing?.flights ?? value?.loads ?? ""} /></Field>
-                  </div>
-                );
-              })}
+            <div className="both-note wide">
+              <CircleGauge />
+              <span><b>Engine totals update automatically</b><small>Loads update engine flights, Cycles Today updates engine starts and cycle totals, and the Hobbs change updates engine hours for every installed engine.</small></span>
             </div>
           )}
           <Field label="NOTES" wide>
