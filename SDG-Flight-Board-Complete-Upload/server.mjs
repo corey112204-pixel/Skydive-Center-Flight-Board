@@ -1028,12 +1028,7 @@ export function handler(req, res) {
           d.notes || "",
           now(),
         );
-        replaceEngineOperations(
-          id,
-          d.aircraft_id,
-          d.engine_operations,
-          true,
-        );
+        replaceEngineOperations(id, d.aircraft_id, Number(d.loads), Number(tc || 0));
         db.prepare(
           `update aircraft set dz=?,time=?,hobbs=?,cycles=coalesce(?,cycles),
            ttsn=coalesce(ttsn,time)+?,tcsn=coalesce(tcsn,cycles)+?,
@@ -1157,13 +1152,7 @@ export function handler(req, res) {
           updated.notes,
           old.id,
         );
-        if (d.engine_operations !== undefined || aircraftId !== old.aircraft_id)
-          replaceEngineOperations(
-            old.id,
-            aircraftId,
-            d.engine_operations || [],
-            true,
-          );
+        replaceEngineOperations(old.id, aircraftId, loads, totalCycles);
         if (aircraftId === old.aircraft_id) {
           updateAircraftTotals(
             old.aircraft_id,
@@ -1376,50 +1365,32 @@ function required(d, ks) {
 function replaceEngineOperations(
   flightRecordId,
   aircraftId,
-  operations,
-  requireWhenConfigured = false,
+  loads,
+  cycles,
 ) {
   const configured = db
     .prepare(
       "select id from engines where aircraft_id=? and status='Active' and archived_at is null order by position",
     )
     .all(aircraftId);
-  if (operations == null) {
-    if (requireWhenConfigured && configured.length)
-      throw Error("Enter engine starts and flights for each operating engine");
-    return;
-  }
-  if (!Array.isArray(operations)) throw Error("Engine operations are invalid");
-  const allowed = new Set(configured.map((engine) => engine.id));
-  const seen = new Set();
-  for (const operation of operations) {
-    if (!allowed.has(operation.engine_id))
-      throw Error("An engine operation does not belong to the selected aircraft");
-    if (seen.has(operation.engine_id)) throw Error("Each engine can only be entered once");
-    seen.add(operation.engine_id);
-    const starts = Number(operation.starts), flights = Number(operation.flights);
-    if (!Number.isInteger(starts) || starts < 0)
-      throw Error("Engine starts must be a whole number of zero or more");
-    if (!Number.isInteger(flights) || flights < 0)
-      throw Error("Engine flights must be a whole number of zero or more");
-    if (flights < starts)
-      throw Error("Engine flights cannot be less than engine starts");
-  }
-  if (requireWhenConfigured && configured.length && !operations.length)
-    throw Error("Select the engines that operated");
+  const starts = Number(cycles), flights = Number(loads);
+  if (!Number.isInteger(starts) || starts < 0)
+    throw Error("Cycles must be a whole number of zero or more");
+  if (!Number.isInteger(flights) || flights < 0)
+    throw Error("Loads must be a whole number of zero or more");
   db.prepare("delete from flight_engine_operations where flight_record_id=?").run(
     flightRecordId,
   );
   const insert = db.prepare(
     "insert into flight_engine_operations(id,flight_record_id,engine_id,starts,flights,created_at) values(?,?,?,?,?,?)",
   );
-  for (const operation of operations)
+  for (const engine of configured)
     insert.run(
       randomUUID(),
       flightRecordId,
-      operation.engine_id,
-      Number(operation.starts),
-      Number(operation.flights),
+      engine.id,
+      starts,
+      flights,
       now(),
     );
 }
