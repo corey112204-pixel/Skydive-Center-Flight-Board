@@ -18,20 +18,21 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "concurrently": "latest",
+    "date-fns": "latest",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest",
     "recharts": "latest",
-    "date-fns": "latest",
-    "zod": "latest",
-    "concurrently": "latest"
+    "typescript": "latest",
+    "vite": "latest",
+    "web-push": "3.6.7",
+    "zod": "latest"
   },
   "devDependencies": {
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "vitest": "latest",
-    "jsdom": "latest"
+    "jsdom": "latest",
+    "vitest": "latest"
   }
 }
