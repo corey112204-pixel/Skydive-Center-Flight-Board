@@ -53,6 +53,37 @@ test("production web server serves built site, API, and health check", async () 
   assert.equal(data.pilots.length, 1);
   assert.equal(data.schedules.length, 0);
   assert.equal(data.aircraft.length, 3);
+
+  const manifest = await fetch(base + "/manifest.webmanifest");
+  assert.equal(manifest.status, 200);
+  assert.match(manifest.headers.get("content-type"), /application\/manifest\+json/);
+  assert.equal((await manifest.json()).display, "standalone");
+  assert.equal((await fetch(base + "/sw.js")).status, 200);
+
+  const pushKey = await fetch(base + "/api/push/public-key", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(pushKey.status, 200);
+  assert.match((await pushKey.json()).public_key, /^[A-Za-z0-9_-]+$/);
+
+  const subscribe = await fetch(base + "/api/push/subscribe", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      subscription: {
+        endpoint: "https://push.example.test/device-1",
+        keys: { p256dh: "test-key", auth: "test-auth" },
+      },
+    }),
+  });
+  assert.equal(subscribe.status, 201);
+  const pushStatus = await fetch(base + "/api/push/status", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.deepEqual(await pushStatus.json(), { enabled: true, devices: 1 });
 });
 
 test("production web server does not expose source or database files", async () => {
