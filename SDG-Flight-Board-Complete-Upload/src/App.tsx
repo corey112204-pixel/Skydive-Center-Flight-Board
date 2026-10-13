@@ -510,7 +510,6 @@ export function App() {
               aircraft={selectedAircraft}
               aircraftList={state.aircraft || []}
               items={state.maintenance || []}
-              history={state.maintenance_history || []}
               engines={state.engines || []}
               engineComponents={state.engine_components || []}
               componentHistory={state.engine_component_history || []}
@@ -519,6 +518,12 @@ export function App() {
                 setPage("aircraft");
               }}
               action={(item: any) => {
+                if (item?.aircraft_id) {
+                  const itemAircraft = (state.aircraft || []).find(
+                    (candidate: any) => candidate.id === item.aircraft_id,
+                  );
+                  if (itemAircraft) setSelectedAircraft(itemAircraft);
+                }
                 setEditing(item);
                 setModal("maintenance");
               }}
@@ -1645,7 +1650,6 @@ function Maintenance({
   aircraft: ac,
   aircraftList,
   items,
-  history,
   engines,
   engineComponents,
   componentHistory,
@@ -1660,7 +1664,6 @@ function Maintenance({
   aircraft: any;
   aircraftList: any[];
   items: any[];
-  history: any[];
   engines: any[];
   engineComponents: any[];
   componentHistory: any[];
@@ -1674,7 +1677,7 @@ function Maintenance({
 }) {
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const [inspectionTemplateId, setInspectionTemplateId] = useState("");
-  const recentInspections = <RecentInspections history={history} aircraft={aircraftList} />;
+  const fleetInspections = <FleetInspections items={items} aircraft={aircraftList} open={action} />;
   if (!ac)
     return (
       <>
@@ -1682,7 +1685,7 @@ function Maintenance({
           title="Maintenance"
           desc="Select an aircraft from the Aircraft page to manage its maintenance."
         />
-        {recentInspections}
+        {fleetInspections}
         <div className="placeholder maintenance-select-prompt">
           <Wrench />
           <h2>No aircraft selected</h2>
@@ -1981,26 +1984,29 @@ function Maintenance({
           )}
         </div>
       </Section>
-      {recentInspections}
+      {fleetInspections}
     </>
   );
 }
 
-function RecentInspections({ history, aircraft }: { history: any[]; aircraft: any[] }) {
-  const tailFor = (entry: any) =>
-    entry.tail || aircraft.find((item) => item.id === entry.aircraft_id)?.tail || "Aircraft";
+function FleetInspections({ items, aircraft, open }: { items: any[]; aircraft: any[]; open: (item: any) => void }) {
+  const inspections = [...items]
+    .filter((entry) => !entry.completed_at && !entry.archived_at)
+    .sort((a, b) => Number(a.urgency_score ?? Number.MAX_SAFE_INTEGER) - Number(b.urgency_score ?? Number.MAX_SAFE_INTEGER));
+  const tailFor = (entry: any) => aircraft.find((item) => item.id === entry.aircraft_id)?.tail || "Aircraft";
   return (
-    <Section title="Recent inspections · all aircraft">
+    <Section title="Fleet inspections · closest due first">
       <div className="inspection-history">
-        {history.map((entry) => (
-          <article className="inspection-history-row" key={entry.id}>
+        {inspections.map((entry) => (
+          <button type="button" className="inspection-history-row" key={entry.id} onClick={() => open(entry)}>
             <div className="inspection-tail"><Plane /><b>{tailFor(entry)}</b></div>
             <div className="grow"><b>{entry.item}</b><small>{entry.component || "Airframe"}</small></div>
-            <div><small>COMPLETED</small><b>{new Date(entry.completed_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</b></div>
-            <div><small>AT COMPLETION</small><b>{entry.hours_at_completion == null ? "—" : `${Number(entry.hours_at_completion).toFixed(1)} hr`} · {entry.cycles_at_completion == null ? "—" : `${Number(entry.cycles_at_completion).toLocaleString()} cycles`}</b></div>
-          </article>
+            <div><small>DUE</small><b>{entry.due || "No due limit set"}</b></div>
+            <div><small>REMAINING</small><b>{entry.remaining_label || "No due limit set"}</b></div>
+            <ArrowUpRight />
+          </button>
         ))}
-        {!history.length && <div className="empty-mini"><ClipboardCheck /><b>No completed inspections yet</b><p>Completed inspections will appear here newest first for the entire fleet.</p></div>}
+        {!inspections.length && <div className="empty-mini"><ClipboardCheck /><b>No active inspections</b><p>Add an inspection to an aircraft and it will appear here by due priority.</p></div>}
       </div>
     </Section>
   );
@@ -3927,9 +3933,6 @@ function MaintenanceModal({
   complete?: () => void;
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [showSecondWarning, setShowSecondWarning] = useState(
-    value?.warning2_hours != null || value?.warning2_days != null || value?.warning2_cycles != null,
-  );
   return (
     <SimpleForm
       title={
@@ -3970,9 +3973,9 @@ function MaintenanceModal({
           warningHours = optionalNumber(d.warning_hours),
           warningDays = optionalNumber(d.warning_days),
           warningCycles = optionalNumber(d.warning_cycles),
-          warning2Hours = showSecondWarning ? optionalNumber(d.warning2_hours) : null,
-          warning2Days = showSecondWarning ? optionalNumber(d.warning2_days) : null,
-          warning2Cycles = showSecondWarning ? optionalNumber(d.warning2_cycles) : null,
+          warning2Hours = optionalNumber(d.warning2_hours),
+          warning2Days = optionalNumber(d.warning2_days),
+          warning2Cycles = optionalNumber(d.warning2_cycles),
           intervalHours = optionalNumber(d.interval_hours),
           intervalDays = optionalNumber(d.interval_days),
           intervalMonths = optionalNumber(d.interval_months),
@@ -4104,46 +4107,7 @@ function MaintenanceModal({
           <option value="engine_tcsoh">Engine TCSOH</option>
         </select>
       </Field>
-      <Field label="WARNING — HOURS BEFORE">
-        <input
-          name="warning_hours"
-          type="number"
-          min="0"
-          step=".1"
-          defaultValue={value?.warning_hours ?? ""}
-          placeholder="Optional"
-        />
-      </Field>
-      <Field label="WARNING — DAYS BEFORE">
-        <input
-          name="warning_days"
-          type="number"
-          min="0"
-          step="1"
-          defaultValue={value?.warning_days ?? ""}
-          placeholder="Optional"
-        />
-      </Field>
-      <Field label="WARNING — CYCLES BEFORE">
-        <input
-          name="warning_cycles"
-          type="number"
-          min="0"
-          step="1"
-          defaultValue={value?.warning_cycles ?? ""}
-          placeholder="Optional"
-        />
-      </Field>
-      <div className="wide warning-toggle">
-        <button type="button" className="ghost" onClick={() => setShowSecondWarning((shown) => !shown)}>
-          {showSecondWarning ? "Remove second warning" : "+ Add a second warning"}
-        </button>
-      </div>
-      {showSecondWarning && <>
-        <Field label="SECOND WARNING — HOURS BEFORE"><input name="warning2_hours" type="number" min="0" step=".1" defaultValue={value?.warning2_hours ?? ""} placeholder="Optional" /></Field>
-        <Field label="SECOND WARNING — DAYS BEFORE"><input name="warning2_days" type="number" min="0" step="1" defaultValue={value?.warning2_days ?? ""} placeholder="Optional" /></Field>
-        <Field label="SECOND WARNING — CYCLES BEFORE"><input name="warning2_cycles" type="number" min="0" step="1" defaultValue={value?.warning2_cycles ?? ""} placeholder="Optional" /></Field>
-      </>}
+      <div className="wide life-limit-disclaimer"><Bell /><span><b>Automatic maintenance notifications</b><small>Hours and cycles: 100, 50, 25, and 10 remaining. Calendar limits: 1 year, 6 months, 3 months, and 1 month remaining. An additional notification is sent when overdue.</small></span></div>
       <Field label="REPEAT EVERY — HOURS">
         <input
           name="interval_hours"
