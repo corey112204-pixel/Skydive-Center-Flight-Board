@@ -701,9 +701,6 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       start_cycles: 800,
       end_cycles: 804,
       loads: 4,
-      engine_operations: [
-        { engine_id: engine.data.id, starts: 1, flights: 4 },
-      ],
     },
     "pilot",
   );
@@ -711,15 +708,15 @@ test("PT6A component cycles follow configured factors and recalculate after corr
   let state = await call("/state", "GET", undefined, "maintenance");
   let trackedEngine = state.data.engines.find((entry) => entry.id === engine.data.id);
   let trackedComponent = state.data.engine_components.find((entry) => entry.id === component.data.id);
-  assert.equal(trackedEngine.total_starts, 101);
+  assert.equal(trackedEngine.total_starts, 104);
   assert.equal(trackedEngine.total_flights, 1004);
   assert.equal(trackedEngine.current_ttsn, 5001);
   assert.equal(trackedEngine.current_csn, 804);
   assert.equal(trackedEngine.current_ttsoh, 1201);
   assert.equal(trackedEngine.current_tcsoh, 304);
-  assert.equal(trackedComponent.equivalent_cycles_since_baseline, 1.75);
-  assert.equal(trackedComponent.current_cycles, 101.75);
-  assert.equal(trackedComponent.remaining_cycles, 1898.25);
+  assert.equal(trackedComponent.equivalent_cycles_since_baseline, 4);
+  assert.equal(trackedComponent.current_cycles, 104);
+  assert.equal(trackedComponent.remaining_cycles, 1896);
   assert.equal(trackedComponent.verification_status, "Verified");
 
   const duplicate = await call(
@@ -735,7 +732,6 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       start_cycles: 800,
       end_cycles: 804,
       loads: 4,
-      engine_operations: [{ engine_id: engine.data.id, starts: 1, flights: 4 }],
     },
     "pilot",
   );
@@ -746,17 +742,16 @@ test("PT6A component cycles follow configured factors and recalculate after corr
     `/flight_records/${flight.data.id}`,
     "PUT",
     {
-      engine_operations: [
-        { engine_id: engine.data.id, starts: 2, flights: 5 },
-      ],
+      end_cycles: 805,
+      loads: 5,
     },
     "pilot",
   );
   assert.equal(corrected.status, 200);
   state = await call("/state", "GET", undefined, "maintenance");
   trackedComponent = state.data.engine_components.find((entry) => entry.id === component.data.id);
-  assert.equal(trackedComponent.equivalent_cycles_since_baseline, 2.75);
-  assert.equal(trackedComponent.current_cycles, 102.75);
+  assert.equal(trackedComponent.equivalent_cycles_since_baseline, 5);
+  assert.equal(trackedComponent.current_cycles, 105);
 
   const replacement = await call(
     `/engine_components/${component.data.id}/replace`,
@@ -767,7 +762,7 @@ test("PT6A component cycles follow configured factors and recalculate after corr
       serial_number: "SN-2",
       max_cycles: 2500,
       baseline_component_cycles: 50,
-      baseline_engine_starts: 102,
+      baseline_engine_starts: 105,
       baseline_engine_flights: 1005,
       acf: 4,
       fcf: 1,
