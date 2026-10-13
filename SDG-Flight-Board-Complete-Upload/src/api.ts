@@ -86,4 +86,16 @@ export const api = {
     request(`/notifications/${id}/read`, { method: "POST" }),
   readAllNotifications: () =>
     request("/notifications/read-all", { method: "POST" }),
+  pushPublicKey: () => request("/push/public-key"),
+  pushStatus: () => request("/push/status"),
+  subscribePush: (subscription: PushSubscriptionJSON) =>
+    request("/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ subscription }),
+    }),
+  unsubscribePush: (endpoint?: string) =>
+    request("/push/unsubscribe", {
+      method: "POST",
+      body: JSON.stringify({ endpoint }),
+    }),
 };
