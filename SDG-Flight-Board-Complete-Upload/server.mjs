@@ -8,6 +8,7 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import webpush from "web-push";
 const databasePath = process.env.SDG_DB_PATH || "work/sdg-operations.sqlite";
 if (process.env.NODE_ENV === "production" && !process.env.SDG_DB_PATH)
   throw Error("SDG_DB_PATH must point to persistent storage in production");
@@ -54,6 +55,23 @@ db.exec(
 db.exec(
   `create table if not exists notification_recipients(notification_id text not null,user_id text not null,primary key(notification_id,user_id),foreign key(notification_id) references notifications(id) on delete cascade,foreign key(user_id) references users(id) on delete cascade);`,
 );
+db.exec(`create table if not exists app_settings(key text primary key,value text not null);
+create table if not exists push_subscriptions(
+  endpoint text primary key,user_id text not null,p256dh text not null,auth text not null,
+  created_at text not null,updated_at text not null,
+  foreign key(user_id) references users(id) on delete cascade
+);`);
+let vapidPublicKey = db.prepare("select value from app_settings where key='vapid_public_key'").get()?.value;
+let vapidPrivateKey = db.prepare("select value from app_settings where key='vapid_private_key'").get()?.value;
+if (!vapidPublicKey || !vapidPrivateKey) {
+  const generated = webpush.generateVAPIDKeys();
+  vapidPublicKey = generated.publicKey;
+  vapidPrivateKey = generated.privateKey;
+  const saveSetting = db.prepare("insert or replace into app_settings(key,value) values(?,?)");
+  saveSetting.run("vapid_public_key", vapidPublicKey);
+  saveSetting.run("vapid_private_key", vapidPrivateKey);
+}
+webpush.setVapidDetails("mailto:operations@sdgops.com", vapidPublicKey, vapidPrivateKey);
 if (
   !db
     .prepare("pragma table_info(timeoff)")
@@ -416,6 +434,42 @@ export function handler(req, res) {
     if (u.pathname === "/api/auth/logout" && req.method === "POST") {
       const token = String(req.headers.authorization).replace(/^Bearer /, "");
       db.prepare("delete from sessions where token=?").run(token);
+      return json(res, 200, { ok: true });
+    }
+    if (u.pathname === "/api/push/public-key" && req.method === "GET")
+      return json(res, 200, { public_key: vapidPublicKey });
+    if (u.pathname === "/api/push/status" && req.method === "GET") {
+      const count = db
+        .prepare("select count(*) count from push_subscriptions where user_id=?")
+        .get(currentUser.id).count;
+      return json(res, 200, { enabled: count > 0, devices: count });
+    }
+    if (u.pathname === "/api/push/subscribe" && req.method === "POST") {
+      const d = await body(req), subscription = d.subscription || d;
+      required(subscription, ["endpoint", "keys"]);
+      required(subscription.keys, ["p256dh", "auth"]);
+      const timestamp = now();
+      db.prepare(
+        `insert into push_subscriptions(endpoint,user_id,p256dh,auth,created_at,updated_at)
+         values(?,?,?,?,?,?) on conflict(endpoint) do update set
+         user_id=excluded.user_id,p256dh=excluded.p256dh,auth=excluded.auth,updated_at=excluded.updated_at`,
+      ).run(
+        String(subscription.endpoint),
+        currentUser.id,
+        String(subscription.keys.p256dh),
+        String(subscription.keys.auth),
+        timestamp,
+        timestamp,
+      );
+      return json(res, 201, { ok: true });
+    }
+    if (u.pathname === "/api/push/unsubscribe" && req.method === "POST") {
+      const d = await body(req);
+      if (d.endpoint)
+        db.prepare("delete from push_subscriptions where endpoint=? and user_id=?").run(
+          String(d.endpoint), currentUser.id,
+        );
+      else db.prepare("delete from push_subscriptions where user_id=?").run(currentUser.id);
       return json(res, 200, { ok: true });
     }
     const role = currentUser.role;
@@ -1551,7 +1605,39 @@ function notify(title, body, targets = {}) {
     "insert or ignore into notification_recipients values(?,?)",
   );
   for (const userId of userIds) if (userId) add.run(id, userId);
+  sendPushNotifications(id, title, body, userIds);
   return id;
+}
+function sendPushNotifications(notificationId, title, body, userIds) {
+  const subscriptions = [];
+  for (const userId of userIds)
+    subscriptions.push(
+      ...db.prepare("select * from push_subscriptions where user_id=?").all(userId),
+    );
+  const payload = JSON.stringify({
+    title,
+    body,
+    icon: "/icons/icon-192.png",
+    badge: "/icons/badge-96.png",
+    url: "/",
+    notification_id: notificationId,
+  });
+  for (const subscription of subscriptions)
+    void webpush
+      .sendNotification(
+        {
+          endpoint: subscription.endpoint,
+          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+        },
+        payload,
+      )
+      .catch((error) => {
+        if ([404, 410].includes(Number(error?.statusCode)))
+          db.prepare("delete from push_subscriptions where endpoint=?").run(
+            subscription.endpoint,
+          );
+        else console.error("Push notification failed", error?.message || error);
+      });
 }
 if (import.meta.url === `file://${process.argv[1]}`)
   createServer(handler).listen(3001, "127.0.0.1", () =>
