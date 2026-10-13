@@ -2,7 +2,11 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { db, handler as apiHandler } from "./server.mjs";
+import {
+  checkMaintenanceAlerts,
+  db,
+  handler as apiHandler,
+} from "./server.mjs";
 
 const dist = resolve(dirname(fileURLToPath(import.meta.url)), "dist");
 const mimeTypes = {
@@ -80,7 +84,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   server.listen(port, "0.0.0.0", () =>
     console.info(`SDG Flight Operations listening on port ${port}`),
   );
-  const shutdown = () => server.close(() => db.close());
+  checkMaintenanceAlerts();
+  const maintenanceAlertTimer = setInterval(
+    () => checkMaintenanceAlerts(),
+    15 * 60 * 1000,
+  );
+  maintenanceAlertTimer.unref();
+  const shutdown = () => {
+    clearInterval(maintenanceAlertTimer);
+    server.close(() => db.close());
+  };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 }
