@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "SDG Flight Operations",
+  "short_name": "SDG Ops",
+  "description": "Skydive Georgia flight operations and aircraft maintenance",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f6",
+  "theme_color": "#102a30",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
