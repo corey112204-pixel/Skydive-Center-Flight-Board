@@ -508,7 +508,9 @@ export function App() {
           ) : page === "maintenance" ? (
             <Maintenance
               aircraft={selectedAircraft}
+              aircraftList={state.aircraft || []}
               items={state.maintenance || []}
+              history={state.maintenance_history || []}
               engines={state.engines || []}
               engineComponents={state.engine_components || []}
               componentHistory={state.engine_component_history || []}
@@ -839,6 +841,15 @@ export function App() {
                   submit(
                     () => api.archive("maintenance", editing.id),
                     "Maintenance item deleted",
+                  )
+              : undefined
+          }
+          complete={
+            editing?.id
+              ? () =>
+                  submit(
+                    () => api.completeMaintenance(editing.id),
+                    "Inspection marked complete",
                   )
               : undefined
           }
@@ -1632,7 +1643,9 @@ function Pilots({ items, open }: { items: any[]; open: (p?: any) => void }) {
 }
 function Maintenance({
   aircraft: ac,
+  aircraftList,
   items,
+  history,
   engines,
   engineComponents,
   componentHistory,
@@ -1645,7 +1658,9 @@ function Maintenance({
   remove,
 }: {
   aircraft: any;
+  aircraftList: any[];
   items: any[];
+  history: any[];
   engines: any[];
   engineComponents: any[];
   componentHistory: any[];
@@ -1659,6 +1674,7 @@ function Maintenance({
 }) {
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const [inspectionTemplateId, setInspectionTemplateId] = useState("");
+  const recentInspections = <RecentInspections history={history} aircraft={aircraftList} />;
   if (!ac)
     return (
       <>
@@ -1666,7 +1682,8 @@ function Maintenance({
           title="Maintenance"
           desc="Select an aircraft from the Aircraft page to manage its maintenance."
         />
-        <div className="placeholder">
+        {recentInspections}
+        <div className="placeholder maintenance-select-prompt">
           <Wrench />
           <h2>No aircraft selected</h2>
           <p>Open the fleet and choose an aircraft.</p>
@@ -1676,7 +1693,7 @@ function Maintenance({
         </div>
       </>
     );
-  const own = items.filter((x) => x.aircraft_id === ac.id);
+  const own = items.filter((x) => x.aircraft_id === ac.id && !x.completed_at);
   const aircraftEngines = engines.filter((engine) => engine.aircraft_id === ac.id);
   const aircraftEngineIds = new Set(aircraftEngines.map((engine) => engine.id));
   const lifeComponents = engineComponents.filter((component) => aircraftEngineIds.has(component.engine_id));
@@ -1964,7 +1981,28 @@ function Maintenance({
           )}
         </div>
       </Section>
+      {recentInspections}
     </>
+  );
+}
+
+function RecentInspections({ history, aircraft }: { history: any[]; aircraft: any[] }) {
+  const tailFor = (entry: any) =>
+    entry.tail || aircraft.find((item) => item.id === entry.aircraft_id)?.tail || "Aircraft";
+  return (
+    <Section title="Recent inspections · all aircraft">
+      <div className="inspection-history">
+        {history.map((entry) => (
+          <article className="inspection-history-row" key={entry.id}>
+            <div className="inspection-tail"><Plane /><b>{tailFor(entry)}</b></div>
+            <div className="grow"><b>{entry.item}</b><small>{entry.component || "Airframe"}</small></div>
+            <div><small>COMPLETED</small><b>{new Date(entry.completed_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</b></div>
+            <div><small>AT COMPLETION</small><b>{entry.hours_at_completion == null ? "—" : `${Number(entry.hours_at_completion).toFixed(1)} hr`} · {entry.cycles_at_completion == null ? "—" : `${Number(entry.cycles_at_completion).toLocaleString()} cycles`}</b></div>
+          </article>
+        ))}
+        {!history.length && <div className="empty-mini"><ClipboardCheck /><b>No completed inspections yet</b><p>Completed inspections will appear here newest first for the entire fleet.</p></div>}
+      </div>
+    </Section>
   );
 }
 function Squawks({
@@ -3128,12 +3166,14 @@ function SimpleForm({
   submit,
   children,
   destructiveAction,
+  secondaryAction,
 }: {
   title: string;
   close: () => void;
   submit: (d: any) => void;
   children: React.ReactNode;
   destructiveAction?: React.ReactNode;
+  secondaryAction?: React.ReactNode;
 }) {
   return (
     <ModalShell
@@ -3150,6 +3190,7 @@ function SimpleForm({
         <div className="form-grid">{children}</div>
         <div className="modal-actions">
           {destructiveAction}
+          {secondaryAction}
           <button type="button" className="ghost" onClick={close}>
             Cancel
           </button>
@@ -3876,12 +3917,14 @@ function MaintenanceModal({
   close,
   save,
   remove,
+  complete,
 }: {
   value: any;
   aircraft: any;
   close: () => void;
   save: (d: any) => void;
   remove?: () => void;
+  complete?: () => void;
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [showSecondWarning, setShowSecondWarning] = useState(
@@ -3895,6 +3938,7 @@ function MaintenanceModal({
           : `Add maintenance · ${aircraft?.tail}`
       }
       close={close}
+      secondaryAction={complete && <button type="button" className="approve" onClick={complete}><ClipboardCheck /> Mark inspection complete</button>}
       destructiveAction={remove && (
         confirmingDelete ? (
           <>
