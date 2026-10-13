@@ -139,7 +139,7 @@ test("maintenance frequency can be stored in calendar months", async () => {
 });
 test("maintenance due time is calculated from aircraft TTSN", async () => {
   const aircraft = db.prepare("select * from aircraft where id='a1'").get();
-  const dueTtsn = Number(aircraft.ttsn) + 10;
+  const dueTtsn = Number(aircraft.ttsn) + 110;
   const created = await call(
     "/maintenance",
     "POST",
@@ -147,7 +147,7 @@ test("maintenance due time is calculated from aircraft TTSN", async () => {
       aircraft_id: "a1",
       item: "TTSN based inspection",
       due: `${dueTtsn.toFixed(1)} TTSN`,
-      remaining: 10,
+      remaining: 110,
       warning: 2,
       status: "OK",
       due_hours: dueTtsn,
@@ -158,7 +158,7 @@ test("maintenance due time is calculated from aircraft TTSN", async () => {
   assert.equal(created.status, 201);
   let state = await call("/state", "GET", undefined, "maintenance");
   let item = state.data.maintenance.find((entry) => entry.id === created.data.id);
-  assert.equal(item.remaining_label, "10.0 hr TTSN");
+  assert.equal(item.remaining_label, "110.0 hr TTSN");
   assert.equal(item.status, "OK");
 
   db.prepare("update aircraft set ttsn=? where id='a1'").run(dueTtsn - 1.5);
@@ -171,7 +171,7 @@ test("maintenance due time is calculated from aircraft TTSN", async () => {
   const alert = db
     .prepare("select * from notifications where body like ? order by created_at desc")
     .get("TTSN based inspection:%");
-  assert.match(alert.title, /Maintenance Hours Warning/);
+  assert.match(alert.title, /Maintenance Hours 10-Hour Alert/);
   const recipientRoles = db
     .prepare(
       `select u.role from notification_recipients r join users u on u.id=r.user_id
@@ -214,7 +214,7 @@ test("maintenance due time can be calculated from Hobbs", async () => {
   assert.equal(item.remaining_label, "0.5 hr Hobbs");
   assert.equal(item.status, "Due soon");
 });
-test("maintenance sends separate uniform hours, calendar, and cycles warnings", async () => {
+test("maintenance sends separate uniform staged hours, calendar, and cycles alerts", async () => {
   const aircraft = db.prepare("select * from aircraft where id='a3'").get();
   const dueDate = new Date(Date.now() + 20 * 86400000).toISOString().slice(0, 10);
   const created = await call(
@@ -249,9 +249,9 @@ test("maintenance sends separate uniform hours, calendar, and cycles warnings", 
     .prepare("select title from notifications where body like 'Three-limit inspection:%'")
     .all()
     .map((entry) => entry.title);
-  assert(titles.some((title) => title.includes("Maintenance Hours Warning")));
-  assert(titles.some((title) => title.includes("Maintenance Calendar Warning")));
-  assert(titles.some((title) => title.includes("Maintenance Cycles Warning")));
+  assert(titles.some((title) => title.includes("Maintenance Hours 25-Hour Alert")));
+  assert(titles.some((title) => title.includes("Maintenance Calendar 1-Month Alert")));
+  assert(titles.some((title) => title.includes("Maintenance Cycles 100-Cycle Alert")));
 });
 test("completing an inspection records fleet history and advances a recurring limit", async () => {
   const aircraft = db.prepare("select * from aircraft where id='a2'").get();
