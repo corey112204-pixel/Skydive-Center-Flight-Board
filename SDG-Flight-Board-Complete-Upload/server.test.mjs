@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const testDir = mkdtempSync(join(tmpdir(), "sdg-api-"));
 process.env.SDG_DB_PATH = join(testDir, "test.sqlite");
-const { handler, db } = await import(`./server.mjs?test=${Date.now()}`);
+const { handler, db, checkMaintenanceAlerts } = await import(
+  `./server.mjs?test=${Date.now()}`
+);
 let server, base;
 const tokens = {};
 test.before(async () => {
@@ -160,10 +162,24 @@ test("maintenance due time is calculated from aircraft TTSN", async () => {
   assert.equal(item.status, "OK");
 
   db.prepare("update aircraft set ttsn=? where id='a1'").run(dueTtsn - 1.5);
+  assert.equal(checkMaintenanceAlerts("a1"), 1);
+  assert.equal(checkMaintenanceAlerts("a1"), 0);
   state = await call("/state", "GET", undefined, "maintenance");
   item = state.data.maintenance.find((entry) => entry.id === created.data.id);
   assert.equal(item.remaining_label, "1.5 hr TTSN");
   assert.equal(item.status, "Due soon");
+  const alert = db
+    .prepare("select * from notifications where body like ? order by created_at desc")
+    .get("TTSN based inspection:%");
+  assert.match(alert.title, /Maintenance warning/);
+  const recipientRoles = db
+    .prepare(
+      `select u.role from notification_recipients r join users u on u.id=r.user_id
+       where r.notification_id=? order by u.role`,
+    )
+    .all(alert.id)
+    .map((entry) => entry.role);
+  assert.deepEqual(recipientRoles, ["administrator", "maintenance"]);
 });
 test("maintenance due time can be calculated from Hobbs", async () => {
   const aircraft = db.prepare("select * from aircraft where id='a2'").get();
