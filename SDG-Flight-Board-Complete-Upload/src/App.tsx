@@ -61,6 +61,11 @@ const addCalendarDays = (date: string, days: number) => {
   next.setDate(next.getDate() + days);
   return localDate(next);
 };
+const decodePushKey = (value: string) => {
+  const padded = value + "=".repeat((4 - (value.length % 4)) % 4);
+  const raw = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+};
 const addCalendarMonths = (date: string, months: number) => {
   const next = calendarDate(date);
   next.setDate(1);
@@ -157,6 +162,9 @@ export function App() {
   const [selectedAircraft, setSelectedAircraft] = useState<any>(null);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
+  const [pushState, setPushState] = useState<
+    "checking" | "disabled" | "enabled" | "blocked" | "unsupported"
+  >("checking");
   const [state, setState] = useState<State>({});
   const currentUser: any = state.current_user || {};
   const notifications = [...(state.notifications || [])].sort((a, b) =>
@@ -194,6 +202,24 @@ export function App() {
     };
   }, [authenticated]);
   useEffect(() => {
+    if (!authenticated || !currentUser.id) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushState("unsupported");
+      return;
+    }
+    api.pushStatus()
+      .then((result) =>
+        setPushState(
+          Notification.permission === "denied"
+            ? "blocked"
+            : result.enabled
+              ? "enabled"
+              : "disabled",
+        ),
+      )
+      .catch(() => setPushState("disabled"));
+  }, [authenticated, currentUser.id]);
+  useEffect(() => {
     if (selectedAircraft) {
       const updated = (state.aircraft || []).find(
         (a) => a.id === selectedAircraft.id,
@@ -225,6 +251,38 @@ export function App() {
       setTimeout(() => setToast(""), 3000);
     } catch (e: any) {
       setError(e.message);
+    }
+  };
+  const enablePushNotifications = async () => {
+    setError("");
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window))
+        throw Error("Push notifications are not supported on this device.");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setPushState("blocked");
+        throw Error("Notifications were not allowed. Enable them in your phone settings and try again.");
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const { public_key } = await api.pushPublicKey();
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription)
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodePushKey(public_key),
+        });
+      await api.subscribePush(subscription.toJSON());
+      setPushState("enabled");
+      setToast("Phone notifications enabled");
+      setTimeout(() => setToast(""), 3000);
+    } catch (e: any) {
+      const onIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const installed = window.matchMedia("(display-mode: standalone)").matches;
+      setError(
+        onIphone && !installed
+          ? "On iPhone, first use Share → Add to Home Screen. Open the new app icon, then enable notifications."
+          : e.message,
+      );
     }
   };
   if (loading)
@@ -343,6 +401,26 @@ export function App() {
                   </button>
                 )}
               </header>
+              <div className={`push-settings ${pushState}`}>
+                <Bell />
+                <span>
+                  <b>Phone alerts</b>
+                  <small>
+                    {pushState === "enabled"
+                      ? "Enabled for this device"
+                      : pushState === "blocked"
+                        ? "Blocked in device settings"
+                        : pushState === "unsupported"
+                          ? "Add this app to your Home Screen first"
+                          : "Get account-specific alerts on this phone"}
+                  </small>
+                </span>
+                {pushState !== "enabled" && pushState !== "checking" && (
+                  <button onClick={() => void enablePushNotifications()}>
+                    Enable
+                  </button>
+                )}
+              </div>
               <div className="notification-list">
                 {notifications.slice(0, 25).map((notification) => (
                   <button
