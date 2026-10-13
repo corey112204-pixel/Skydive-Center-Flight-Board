@@ -60,6 +60,11 @@ create table if not exists push_subscriptions(
   endpoint text primary key,user_id text not null,p256dh text not null,auth text not null,
   created_at text not null,updated_at text not null,
   foreign key(user_id) references users(id) on delete cascade
+);
+create table if not exists maintenance_alerts(
+  maintenance_id text not null,alert_level text not null,due_signature text not null,
+  created_at text not null,primary key(maintenance_id,alert_level,due_signature),
+  foreign key(maintenance_id) references maintenance(id) on delete cascade
 );`);
 let vapidPublicKey = db.prepare("select value from app_settings where key='vapid_public_key'").get()?.value;
 let vapidPrivateKey = db.prepare("select value from app_settings where key='vapid_private_key'").get()?.value;
@@ -1135,6 +1140,7 @@ export function handler(req, res) {
         db.exec("rollback");
         throw e;
       }
+      checkMaintenanceAlerts(d.aircraft_id);
       return json(res, 201, { id, total_time: total });
     }
     if (
@@ -1270,6 +1276,8 @@ export function handler(req, res) {
         db.exec("rollback");
         throw e;
       }
+      checkMaintenanceAlerts(aircraftId);
+      if (aircraftId !== old.aircraft_id) checkMaintenanceAlerts(old.aircraft_id);
       return json(res, 200, updated);
     }
     if (req.method === "DELETE" && resource === "flight_records" && parts[2]) {
@@ -1302,6 +1310,7 @@ export function handler(req, res) {
         db.exec("rollback");
         throw e;
       }
+      checkMaintenanceAlerts(old.aircraft_id);
       return json(res, 200, { ok: true });
     }
     if (req.method === "POST") {
@@ -1354,6 +1363,8 @@ export function handler(req, res) {
             ? { pilotIds: [d.pilot_id] }
             : { userIds: [currentUser.id] },
       );
+      if (["maintenance", "aircraft"].includes(resource))
+        checkMaintenanceAlerts(d.aircraft_id || id);
       return json(res, 201, { id, ...d });
     }
     if ((req.method === "PUT" || req.method === "PATCH") && parts[2]) {
@@ -1390,6 +1401,10 @@ export function handler(req, res) {
             ? { pilotIds: [d.pilot_id || old.pilot_id] }
             : { userIds: [currentUser.id] },
       );
+      if (["maintenance", "aircraft"].includes(resource))
+        checkMaintenanceAlerts(
+          resource === "maintenance" ? old.aircraft_id : old.id,
+        );
       return json(res, 200, { ...old, ...d });
     }
     if (req.method === "DELETE" && parts[2]) {
@@ -1638,6 +1653,124 @@ function sendPushNotifications(notificationId, title, body, userIds) {
           );
         else console.error("Push notification failed", error?.message || error);
       });
+}
+function maintenanceCounter(item, aircraft) {
+  const component = ["engine", "engine1", "engine2"].includes(item.component)
+      ? item.component
+      : "airframe",
+    enginePrefix = component === "engine1"
+      ? "engine1"
+      : component === "engine2"
+        ? "engine2"
+        : "engine",
+    timeBasis = ["hobbs", "ttsn", "engine_ttsn", "engine_ttsoh"].includes(
+      item.due_time_basis,
+    )
+      ? item.due_time_basis
+      : "ttsn",
+    cycleBasis = ["tcsn", "engine_tcsn", "engine_tcsoh"].includes(
+      item.due_cycle_basis,
+    )
+      ? item.due_cycle_basis
+      : "tcsn",
+    trackedTime = timeBasis === "hobbs"
+      ? Number(aircraft?.hobbs ?? aircraft?.time ?? 0)
+      : timeBasis === "engine_ttsn"
+        ? Number(aircraft?.[`${enginePrefix}_ttsn`] ?? 0)
+        : timeBasis === "engine_ttsoh"
+          ? Number(
+              aircraft?.[`${enginePrefix}_ttsoh`] ??
+                aircraft?.[`${enginePrefix}_tsmoh`] ??
+                0,
+            )
+          : Number(aircraft?.ttsn ?? aircraft?.time ?? 0),
+    trackedCycles = cycleBasis === "engine_tcsn"
+      ? Number(aircraft?.[`${enginePrefix}_tcsn`] ?? 0)
+      : cycleBasis === "engine_tcsoh"
+        ? Number(aircraft?.[`${enginePrefix}_tcsoh`] ?? 0)
+        : Number(aircraft?.tcsn ?? aircraft?.cycles ?? 0),
+    hours = item.due_hours == null ? null : Number(item.due_hours) - trackedTime,
+    cycles = item.due_cycles == null ? null : Number(item.due_cycles) - trackedCycles,
+    days = !item.due_date
+      ? null
+      : Math.ceil(
+          (new Date(`${item.due_date}T23:59:59`).getTime() - Date.now()) /
+            86400000,
+        );
+  return { hours, cycles, days, timeBasis, cycleBasis };
+}
+function maintenanceAlertLevel(item, remaining) {
+  if (
+    [remaining.hours, remaining.cycles, remaining.days].some(
+      (value) => value != null && value <= 0,
+    )
+  ) return "overdue";
+  const dimensions = [
+    [remaining.hours, item.warning_hours, item.warning2_hours],
+    [remaining.cycles, item.warning_cycles, item.warning2_cycles],
+    [remaining.days, item.warning_days, item.warning2_days],
+  ];
+  let level = 0;
+  for (const [value, first, second] of dimensions) {
+    if (value == null) continue;
+    const thresholds = [first, second]
+      .filter((threshold) => threshold != null && Number(threshold) >= 0)
+      .map(Number)
+      .sort((a, b) => b - a);
+    if (thresholds.length && value <= thresholds[0]) level = Math.max(level, 1);
+    if (thresholds.length > 1 && value <= thresholds[1]) level = Math.max(level, 2);
+  }
+  return level === 2 ? "critical" : level === 1 ? "warning" : null;
+}
+function maintenanceRemainingText(remaining) {
+  const values = [
+    remaining.hours == null ? null : `${Math.abs(remaining.hours).toFixed(1)} hours`,
+    remaining.cycles == null ? null : `${Math.abs(remaining.cycles)} cycles`,
+    remaining.days == null ? null : `${Math.abs(remaining.days)} days`,
+  ].filter(Boolean);
+  return values.join(" / ") || "due limit reached";
+}
+export function checkMaintenanceAlerts(aircraftId = null) {
+  const items = db
+    .prepare(
+      `select m.*,a.tail,a.hobbs,a.time,a.ttsn,a.tcsn,a.cycles,
+       a.engine_ttsn,a.engine_ttsoh,a.engine_tcsn,a.engine_tcsoh,
+       a.engine1_ttsn,a.engine1_tsmoh,a.engine1_tcsn,a.engine1_tcsoh,
+       a.engine2_ttsn,a.engine2_tsmoh,a.engine2_tcsn,a.engine2_tcsoh
+       from maintenance m join aircraft a on a.id=m.aircraft_id
+       where m.archived_at is null and m.completed_at is null and (? is null or m.aircraft_id=?)`,
+    )
+    .all(aircraftId, aircraftId);
+  let sent = 0;
+  for (const item of items) {
+    const remaining = maintenanceCounter(item, item),
+      level = maintenanceAlertLevel(item, remaining);
+    if (!level) continue;
+    const signature = JSON.stringify([
+      item.due_hours, item.due_date, item.due_cycles,
+      item.warning_hours, item.warning_days, item.warning_cycles,
+      item.warning2_hours, item.warning2_days, item.warning2_cycles,
+    ]);
+    const inserted = db.prepare(
+      "insert or ignore into maintenance_alerts(maintenance_id,alert_level,due_signature,created_at) values(?,?,?,?)",
+    ).run(item.id, level, signature, now());
+    if (!inserted.changes) continue;
+    const remainingText = maintenanceRemainingText(remaining),
+      descriptor = level === "overdue"
+        ? `${remainingText} past due`
+        : `${remainingText} remaining`;
+    notify(
+      level === "overdue"
+        ? `Maintenance overdue · ${item.tail}`
+        : level === "critical"
+          ? `Maintenance critical · ${item.tail}`
+          : `Maintenance warning · ${item.tail}`,
+      `${item.item}: ${descriptor}`,
+      { roles: ["maintenance", "administrator"] },
+    );
+    sent += 1;
+  }
+  return sent;
 }
 if (import.meta.url === `file://${process.argv[1]}`)
   createServer(handler).listen(3001, "127.0.0.1", () =>
