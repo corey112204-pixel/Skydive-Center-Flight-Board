@@ -2719,13 +2719,7 @@ function DayModal({
         onSubmit={(e) => {
           e.preventDefault();
           const f = Object.fromEntries(new FormData(e.currentTarget)),
-            cycles = Number(f.cycles),
-            loads = Number(f.loads),
-            engineOperations = availableEngines.map((engine) => ({
-              engine_id: engine.id,
-              starts: cycles,
-              flights: loads,
-            }));
+            cycles = Number(f.cycles);
           submit({
             ...f,
             aircraft_id: aircraftId,
@@ -2735,7 +2729,6 @@ function DayModal({
             start_time: start,
             start_cycles: startCycles,
             end_cycles: startCycles + cycles,
-            engine_operations: engineOperations,
             squawk_description: squawk ? f.squawk_description : null,
             squawk_severity: squawk ? "Information" : null,
           });
@@ -2836,12 +2829,6 @@ function DayModal({
               inputMode="numeric"
             />
           </Field>
-          {availableEngines.length > 0 && (
-            <div className="both-note wide">
-              <CircleGauge />
-              <span><b>Engine totals update automatically</b><small>Loads update engine flights, Cycles Today updates engine starts and cycle totals, and the Hobbs change updates engine hours for every installed engine.</small></span>
-            </div>
-          )}
           <Field label="NOTES" wide>
             <textarea
               name="notes"
