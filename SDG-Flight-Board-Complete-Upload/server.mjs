@@ -781,24 +781,9 @@ export function handler(req, res) {
             (daysLeft != null && daysLeft <= 0) ||
             (cyclesLeft != null && cyclesLeft <= 0),
           soon =
-            (hoursLeft != null &&
-              item.warning_hours != null &&
-              hoursLeft <= Number(item.warning_hours)) ||
-            (daysLeft != null &&
-              item.warning_days != null &&
-              daysLeft <= Number(item.warning_days)) ||
-            (cyclesLeft != null &&
-              item.warning_cycles != null &&
-              cyclesLeft <= Number(item.warning_cycles)) ||
-            (hoursLeft != null &&
-              item.warning2_hours != null &&
-              hoursLeft <= Number(item.warning2_hours)) ||
-            (daysLeft != null &&
-              item.warning2_days != null &&
-              daysLeft <= Number(item.warning2_days)) ||
-            (cyclesLeft != null &&
-              item.warning2_cycles != null &&
-              cyclesLeft <= Number(item.warning2_cycles)),
+            (hoursLeft != null && hoursLeft <= 100) ||
+            (daysLeft != null && daysLeft <= 365) ||
+            (cyclesLeft != null && cyclesLeft <= 100),
           remainingParts = [
             hoursLeft == null ? null : `${hoursLeft.toFixed(1)} hr ${timeLabel}`,
             daysLeft == null ? null : `${daysLeft} days`,
@@ -1796,16 +1781,10 @@ function maintenanceCounter(item, aircraft) {
         );
   return { hours, cycles, days, timeBasis, cycleBasis };
 }
-function maintenanceThresholds(primary, secondary, defaults) {
-  if (primary == null && secondary == null) return defaults;
-  const outer = primary == null ? Number(secondary) * 2 : Number(primary),
-    inner = secondary == null ? Number(outer) / 2 : Number(secondary);
-  return [outer, inner].sort((a, b) => b - a);
-}
 function maintenanceDimensionLevel(value, thresholds) {
-  if (value <= 0) return "overdue";
-  if (value <= thresholds[1]) return "critical";
-  if (value <= thresholds[0]) return "warning";
+  if (value <= 0) return { code: "overdue", label: "Overdue" };
+  for (let index = thresholds.length - 1; index >= 0; index -= 1)
+    if (value <= thresholds[index].value) return thresholds[index];
   return null;
 }
 export function checkMaintenanceAlerts(aircraftId = null) {
@@ -1825,19 +1804,34 @@ export function checkMaintenanceAlerts(aircraftId = null) {
       {
         key: "hours", label: "Hours", value: remaining.hours,
         due: item.due_hours, basis: String(item.due_time_basis || "TTSN").toUpperCase(),
-        thresholds: maintenanceThresholds(item.warning_hours, item.warning2_hours, [25, 10]),
+        thresholds: [
+          { value: 100, code: "100-hour", label: "100-Hour Alert" },
+          { value: 50, code: "50-hour", label: "50-Hour Alert" },
+          { value: 25, code: "25-hour", label: "25-Hour Alert" },
+          { value: 10, code: "10-hour", label: "10-Hour Alert" },
+        ],
         format: (value) => `${Math.abs(value).toFixed(1)} hours`,
       },
       {
         key: "calendar", label: "Calendar", value: remaining.days,
         due: item.due_date, basis: "calendar date",
-        thresholds: maintenanceThresholds(item.warning_days, item.warning2_days, [30, 7]),
+        thresholds: [
+          { value: 365, code: "1-year", label: "1-Year Alert" },
+          { value: 183, code: "6-month", label: "6-Month Alert" },
+          { value: 92, code: "3-month", label: "3-Month Alert" },
+          { value: 31, code: "1-month", label: "1-Month Alert" },
+        ],
         format: (value) => `${Math.abs(value)} days`,
       },
       {
         key: "cycles", label: "Cycles", value: remaining.cycles,
         due: item.due_cycles, basis: String(item.due_cycle_basis || "TCSN").toUpperCase(),
-        thresholds: maintenanceThresholds(item.warning_cycles, item.warning2_cycles, [100, 25]),
+        thresholds: [
+          { value: 100, code: "100-cycle", label: "100-Cycle Alert" },
+          { value: 50, code: "50-cycle", label: "50-Cycle Alert" },
+          { value: 25, code: "25-cycle", label: "25-Cycle Alert" },
+          { value: 10, code: "10-cycle", label: "10-Cycle Alert" },
+        ],
         format: (value) => `${Math.abs(value)} cycles`,
       },
     ];
@@ -1846,17 +1840,16 @@ export function checkMaintenanceAlerts(aircraftId = null) {
       const level = maintenanceDimensionLevel(dimension.value, dimension.thresholds);
       if (!level) continue;
       const signature = JSON.stringify([
-        dimension.key, dimension.due, ...dimension.thresholds,
-      ]), alertCode = `${dimension.key}:${level}`;
+        dimension.key, dimension.due, ...dimension.thresholds.map((threshold) => threshold.value),
+      ]), alertCode = `${dimension.key}:${level.code}`;
       const inserted = db.prepare(
         "insert or ignore into maintenance_alerts(maintenance_id,alert_level,due_signature,created_at) values(?,?,?,?)",
       ).run(item.id, alertCode, signature, now());
       if (!inserted.changes) continue;
-      const stage = level === "overdue" ? "Overdue" : level === "critical" ? "Critical" : "Warning",
-        amount = dimension.format(dimension.value),
-        descriptor = level === "overdue" ? `${amount} overdue` : `${amount} remaining`;
+      const amount = dimension.format(dimension.value),
+        descriptor = level.code === "overdue" ? `${amount} overdue` : `${amount} remaining`;
       notify(
-        `Maintenance ${dimension.label} ${stage} · ${item.tail}`,
+        `Maintenance ${dimension.label} ${level.label} · ${item.tail}`,
         `${item.item}: ${descriptor} (${dimension.basis} due ${dimension.due}).`,
         { roles: ["maintenance", "administrator"] },
       );
