@@ -43,6 +43,36 @@
   max-height: 450px;
   overflow: auto;
 }
+.push-settings {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: #f6faf9;
+  border-bottom: 1px solid var(--line);
+}
+.push-settings > svg {
+  width: 19px;
+  color: var(--teal);
+}
+.push-settings > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.push-settings b { font-size: 11px; }
+.push-settings small { font-size: 9px; color: var(--muted); }
+.push-settings > button {
+  border: 0;
+  border-radius: 6px;
+  background: var(--teal);
+  color: white;
+  padding: 7px 10px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.push-settings.enabled { background: #eaf6f1; }
+.push-settings.blocked { background: #fff3e5; }
 .notification-list > button {
   width: 100%;
   display: grid;
