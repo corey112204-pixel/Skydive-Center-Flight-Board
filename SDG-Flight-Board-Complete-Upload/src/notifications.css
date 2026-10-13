@@ -140,7 +140,7 @@
 @media (max-width: 760px) {
   .notification-popover {
     position: fixed;
-    top: 58px;
+    top: calc(58px + env(safe-area-inset-top));
     right: 14px;
     left: 14px;
     width: auto;
