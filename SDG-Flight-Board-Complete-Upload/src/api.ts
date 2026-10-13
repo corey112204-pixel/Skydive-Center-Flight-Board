@@ -63,6 +63,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(d),
     }),
+  completeMaintenance: (id: string, notes = "") =>
+    request(`/maintenance/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ notes }),
+    }),
   createTimeOff: (d: any) =>
     request("/timeoff", {
       method: "POST",
