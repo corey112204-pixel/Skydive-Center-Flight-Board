@@ -781,10 +781,24 @@ export function App() {
       {modal === "loadsheet" && (
         <LoadSheetModal
           close={() => setModal(null)}
-          submit={(d) =>
+          submit={({ files, weekEnding }) =>
             submit(
-              () => api.uploadDocument(d),
-              "Weekly load sheet saved in Documents",
+              async () => {
+                for (let index = 0; index < files.length; index += 1) {
+                  const file = files[index],
+                    baseName = file.name.replace(/\.[^.]+$/, "") || `load-sheet-${index + 1}`;
+                  await api.uploadDocument({
+                    folder: "Load Sheets",
+                    file_name: `${baseName}.jpg`,
+                    mime_type: "image/jpeg",
+                    image_data: await loadSheetImageToData(file),
+                    week_ending: weekEnding,
+                    uploaded_by: "current-account",
+                    created_at: new Date().toISOString(),
+                  });
+                }
+              },
+              `${files.length} weekly load sheet photo${files.length === 1 ? "" : "s"} saved in Documents`,
             )
           }
         />
@@ -3530,10 +3544,14 @@ function LoadSheetModal({
   submit,
 }: {
   close: () => void;
-  submit: (d: any) => Promise<void> | void;
+  submit: (d: { files: File[]; weekEnding: string }) => Promise<void> | void;
 }) {
   const [uploading, setUploading] = useState(false);
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const addPhotos = (files: FileList | null) => {
+    if (!files?.length) return;
+    setPhotos((current) => [...current, ...Array.from(files)]);
+  };
   const latestSunday = new Date();
   latestSunday.setDate(latestSunday.getDate() - latestSunday.getDay());
   return (
@@ -3550,24 +3568,15 @@ function LoadSheetModal({
           try {
             setUploading(true);
             const form = new FormData(uploadForm),
-              file = photo,
               weekEnding = String(form.get("week_ending")),
               parsed = new Date(`${weekEnding}T12:00:00`);
-            if (!file?.size) throw new Error("Choose a load sheet photo");
+            if (!photos.length || photos.some((file) => !file.size))
+              throw new Error("Choose at least one load sheet photo");
             if (parsed.getDay() !== 0)
               throw new Error("Week ending must be a Sunday");
             if (parsed.getTime() > Date.now())
               throw new Error("The weekly sheet can be uploaded on or after that Sunday");
-            const baseName = file.name.replace(/\.[^.]+$/, "") || "load-sheet";
-            await submit({
-              folder: "Load Sheets",
-              file_name: `${baseName}.jpg`,
-              mime_type: "image/jpeg",
-              image_data: await loadSheetImageToData(file),
-              week_ending: weekEnding,
-              uploaded_by: "current-account",
-              created_at: new Date().toISOString(),
-            });
+            await submit({ files: photos, weekEnding });
           } catch (error: any) {
             setFieldError(uploadForm, error.message || "The load sheet could not be uploaded");
           } finally {
@@ -3580,14 +3589,18 @@ function LoadSheetModal({
             <input name="week_ending" type="date" required defaultValue={localDate(latestSunday)} />
           </Field>
           <div className="wide upload-photo-options">
-            <span>LOAD SHEET PHOTO</span>
+            <span>LOAD SHEET PHOTOS</span>
             <div>
               <label className="photo-button">
                 <FolderOpen /> Choose from photo library
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(event) => setPhoto(event.target.files?.[0] || null)}
+                  multiple
+                  onChange={(event) => {
+                    addPhotos(event.target.files);
+                    event.currentTarget.value = "";
+                  }}
                 />
               </label>
               <label className="photo-button">
@@ -3596,11 +3609,24 @@ function LoadSheetModal({
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={(event) => setPhoto(event.target.files?.[0] || null)}
+                  onChange={(event) => {
+                    addPhotos(event.target.files);
+                    event.currentTarget.value = "";
+                  }}
                 />
               </label>
             </div>
-            <small>{photo ? `Selected: ${photo.name}` : "Choose an existing picture or take one with the camera."}</small>
+            <small>{photos.length ? `${photos.length} photo${photos.length === 1 ? "" : "s"} selected` : "Choose multiple pictures from your library, or take photos one at a time."}</small>
+            {photos.length > 0 && (
+              <div className="selected-load-sheets">
+                {photos.map((file, index) => (
+                  <span key={`${file.name}-${file.lastModified}-${index}`}>
+                    <b>{index + 1}. {file.name}</b>
+                    <button type="button" className="danger-link" onClick={() => setPhotos((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <p className="field-message wide" aria-live="polite" />
         </div>
@@ -3609,7 +3635,7 @@ function LoadSheetModal({
             Cancel
           </button>
           <button className="primary" disabled={uploading}>
-            <FolderOpen /> {uploading ? "Preparing photo…" : "Store in Documents"}
+            <FolderOpen /> {uploading ? "Preparing photos…" : photos.length ? `Store ${photos.length} photo${photos.length === 1 ? "" : "s"} in Documents` : "Store photos in Documents"}
           </button>
         </div>
       </form>
